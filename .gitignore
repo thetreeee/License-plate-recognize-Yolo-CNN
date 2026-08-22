@@ -18,6 +18,9 @@ env/
 # YOLOv8 training runs (tự sinh khi train)
 runs/
 
+# Data (quá lớn, không push lên GitHub)
+data/
+
 # OS files
 .DS_Store
 Thumbs.db
