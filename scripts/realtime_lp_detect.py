@@ -8,6 +8,7 @@
 import cv2
 import time
 import argparse
+import torch
 from ultralytics import YOLO
 
 def main():
@@ -17,11 +18,21 @@ def main():
     parser.add_argument("--conf", type=float, default=0.1, help="Confidence threshold")
     parser.add_argument("--iou", type=float, default=0.45, help="NMS IoU threshold")
     parser.add_argument("--imgsz", type=int, default=1280, help="Inference image size")
+    parser.add_argument("--device", type=str, default="auto", help="Device: 'auto', 'cpu', or '0' for GPU")
     args = parser.parse_args()
+
+    # Auto-detect device
+    if args.device == "auto":
+        device = 0 if torch.cuda.is_available() else "cpu"
+    else:
+        device = args.device
+
+    use_half = (device != "cpu")  # FP16 chỉ hỗ trợ trên GPU
 
     # Load model
     model = YOLO(args.weights)
     print(f"✅ Model loaded: {args.weights}")
+    print(f"🖥️  Device: {'GPU (' + torch.cuda.get_device_name(0) + ')' if device != 'cpu' else 'CPU'}")
 
     # Open webcam
     cap = cv2.VideoCapture(args.source)
@@ -49,9 +60,9 @@ def main():
             conf=args.conf,
             iou=args.iou,
             imgsz=args.imgsz,
-            device=0,       # GPU. Đổi thành 'cpu' nếu không có GPU
+            device=device,
             verbose=False,
-            half=True,      # FP16 cho tốc độ nhanh hơn trên GPU
+            half=use_half,
         )
 
         # Draw results
