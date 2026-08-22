@@ -18,20 +18,6 @@ Nhận diện biển số xe sử dụng **YOLOv8n** để detect biển số, k
 └── README.md
 ```
 
-## ⚙️ Cài đặt
-
-```bash
-# Clone repo
-git clone https://github.com/thetreeee/License-plate-recognize-Yolo-CNN.git
-cd License-plate-recognize-Yolo-CNN
-
-# Pull LFS files (data lớn)
-git lfs pull
-
-# Cài dependencies
-pip install ultralytics>=8.2.0 opencv-python
-```
-
 ## 🚀 Sử dụng
 
 ### Detect biển số real-time (Webcam)
