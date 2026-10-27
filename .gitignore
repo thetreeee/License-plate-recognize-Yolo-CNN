@@ -9,6 +9,7 @@ build/
 
 # Virtual environments
 venv/
+.venv/
 .env/
 env/
 
@@ -18,7 +19,7 @@ env/
 # YOLOv8 training runs (tự sinh khi train)
 runs/
 
-# Data (quá lớn, không push lên GitHub)
+# Data cục bộ (dataset, video test và kết quả)
 data/
 
 # OS files

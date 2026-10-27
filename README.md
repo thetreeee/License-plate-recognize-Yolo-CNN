@@ -1,68 +1,27 @@
-# 🚗 License Plate Recognition — YOLOv8n + OCR
+# Detect biển số bằng YOLOv8n
 
-Nhận diện biển số xe sử dụng **YOLOv8n** để detect biển số, kết hợp **OCR** để đọc ký tự.
+Chạy các lệnh sau trong PowerShell tại thư mục gốc project.
 
-## 📁 Cấu trúc project
+## 1. Kích hoạt môi trường ảo
 
-```
-├── weights/          # Trọng số model đã train
-│   └── best.pt
-├── data/             # Dataset (images + labels)
-│   └── data.rar
-├── notebooks/        # Jupyter Notebooks (training pipeline)
-│   └── YOLOv8n_License_Plate_Detection_Pipeline.ipynb
-├── scripts/          # Scripts chạy inference
-│   └── realtime_lp_detect.py
-├── .gitignore
-├── .gitattributes    # Git LFS config
-└── README.md
+```powershell
+.\venv\Scripts\Activate.ps1
 ```
 
-## ⚙️ Cài đặt
+Nếu môi trường của bạn tên `.venv`, dùng `.\.venv\Scripts\Activate.ps1`.
 
-```bash
-# 1. Clone repo
-git clone https://github.com/thetreeee/License-plate-recognize-Yolo-CNN.git
-cd License-plate-recognize-Yolo-CNN
+## 2. Chạy detect
 
-# 2. Pull file lớn (weights + data) qua Git LFS
-git lfs pull
+Video test:
 
-# 3. Cài dependencies
-pip install -r requirements.txt
+```powershell
+python scripts/realtime_lp_detect.py --mode detect --source "data/test/test2.mp4" --imgsz 640
 ```
 
-## 🚀 Sử dụng
+Webcam:
 
-### Detect biển số real-time (Webcam)
-
-```bash
-python scripts/realtime_lp_detect.py --weights weights/best.pt
+```powershell
+python scripts/realtime_lp_detect.py --mode detect --source 0 --imgsz 640
 ```
 
-**Tùy chọn:**
-| Argument | Default | Mô tả |
-|----------|---------|-------|
-| `--weights` | `weights/best.pt` | Đường dẫn trọng số |
-| `--source` | `0` | Index webcam (0, 1, ...) |
-| `--conf` | `0.1` | Ngưỡng confidence |
-| `--iou` | `0.45` | Ngưỡng NMS IoU |
-| `--imgsz` | `1280` | Kích thước ảnh inference |
-
-> Nhấn **`q`** để thoát.
-
-### Training model
-
-Mở notebook `notebooks/YOLOv8n_License_Plate_Detection_Pipeline.ipynb` trên **Google Colab** (GPU T4).
-
-## 📝 Thêm data / model mới
-
-- **Thêm trọng số**: Bỏ file `.pt` vào folder `weights/`
-- **Thêm dataset**: Bỏ file vào folder `data/`
-- **Thêm script**: Bỏ file `.py` vào folder `scripts/`
-
-## 🛠️ Tech Stack
-
-- **YOLOv8n** (Ultralytics) — Object Detection
-- **OpenCV** — Video capture & display
-- **Python 3.x**
+Trọng số mặc định: `weights/best.pt`. Nhấn **q** để thoát demo; chạy `deactivate` để thoát môi trường ảo.
