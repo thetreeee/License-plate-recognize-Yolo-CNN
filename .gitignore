@@ -31,3 +31,19 @@ desktop.ini
 .idea/
 *.swp
 *.swo
+
+# ===== OCR (LPRNet) =====
+# Dữ liệu thô / file nén / dataset (quá lớn cho GitHub)
+*.zip
+*.rar
+*.7z
+*.tar
+*.tar.gz
+dataset/
+datasets/
+VNLP*/
+# Ảnh rà soát tập train (~155 MB, notebook v5 tự sinh lại ở Bước 10.1)
+OCR/**/train_review_page*.png
+# File tạm
+*.tmp
+crash_*.pth
