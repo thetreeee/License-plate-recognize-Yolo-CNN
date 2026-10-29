@@ -18,6 +18,9 @@ env/
 # YOLOv8 training runs (tự sinh khi train)
 runs/
 
+# Generated image/video OCR results
+outputs/
+
 # Data (quá lớn, không push lên GitHub)
 data/
 
