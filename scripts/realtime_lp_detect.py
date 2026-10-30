@@ -42,7 +42,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--weights", default="weights/best.pt")
     parser.add_argument("--source", default="0", help="Webcam index or video path/URL")
-    parser.add_argument("--conf", type=float, default=0.6)
+    parser.add_argument("--conf", type=float, default=0.5)
     parser.add_argument("--iou", type=float, default=0.45, help="YOLO NMS IoU")
     parser.add_argument("--imgsz", type=int, default=640)
     parser.add_argument("--device", default="auto", help="auto, cpu, or CUDA index")
