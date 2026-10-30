@@ -22,6 +22,9 @@ runs/
 # Data cục bộ (dataset, video test và kết quả)
 data/
 
+# Local OCR experiments (outside the current YOLO + ByteTrack scope)
+/experiments/
+
 # OS files
 .DS_Store
 Thumbs.db
