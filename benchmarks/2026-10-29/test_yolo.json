@@ -1,0 +1,23 @@
+{
+  "pipeline": "detect",
+  "frames": 232,
+  "yolo_calls": 232,
+  "imgsz": 640,
+  "conf": 0.5,
+  "device": "0",
+  "source": "C:\\Users\\Admin\\Documents\\code1ty\\ComputerVision\\yolov8n+OCR\\data\\test\\test.mp4",
+  "cpu_threads": 4,
+  "unique_ids": 0,
+  "frames_with_visible_tracks": 4,
+  "processing_fps": 46.75056943044865,
+  "playback_seconds": 7.849941300002683,
+  "loop_p50_ms": 21.18999999947846,
+  "loop_p95_ms": 28.35169999889331,
+  "loop_max_ms": 55.320200001006015,
+  "predict_track_p50_ms": 14.937399999325862,
+  "predict_track_p95_ms": 20.103800001379568,
+  "inference_tracking_seconds": 3.4368391999960295,
+  "timing_samples": 232,
+  "peak_cuda_allocated_mb": 143.9658203125,
+  "peak_cuda_reserved_mb": 162.0
+}

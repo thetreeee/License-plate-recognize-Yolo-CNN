@@ -1,0 +1,25 @@
+{
+  "pipeline": "async",
+  "frames": 349,
+  "yolo_calls": 48,
+  "skipped_percent": 86.24641833810888,
+  "active_loop_fps": 58.12033604104255,
+  "playback_seconds": 11.912910200000624,
+  "loop_p50_ms": 18.7073999986751,
+  "loop_p95_ms": 32.59539999999106,
+  "loop_max_ms": 62.772299999778625,
+  "inference_seconds": 0.9440651000004436,
+  "frames_with_visible_tracks": 219,
+  "worker": {
+    "calls": 48,
+    "inference_seconds": 0.9440651000004436,
+    "replaced": 0,
+    "stale": 1,
+    "applied": 47,
+    "busy": false,
+    "latency_ms": 77.43349999873317,
+    "detected_boxes": 25,
+    "prepared_boxes": 25,
+    "applied_boxes": 24
+  }
+}
