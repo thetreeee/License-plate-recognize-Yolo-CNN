@@ -1,27 +1,26 @@
-# Detect biển số bằng YOLOv8n
+# Detect và tracking biển số — YOLOv8n + ByteTrack
 
-Chạy các lệnh sau trong PowerShell tại thư mục gốc project.
+Tiến độ hiện tại: detect bbox và gán ID qua các frame; chưa tích hợp OCR vào bản chạy này. YOLO chạy mỗi frame, ByteTrack liên kết ID. Bản CSRT cũ được giữ để đối chiếu.
 
-## 1. Kích hoạt môi trường ảo
+Chạy trong PowerShell tại thư mục gốc project:
 
 ```powershell
+# Chỉ cần tạo môi trường khi chưa có
+python -m venv venv
 .\venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+
+# Video cục bộ
+python scripts/realtime_lp_bytetrack.py --source "data/test/test2.mp4"
+
+# Webcam
+python scripts/realtime_lp_bytetrack.py --source 0
 ```
 
-Nếu môi trường của bạn tên `.venv`, dùng `.\.venv\Scripts\Activate.ps1`.
+Nếu đã có môi trường thì chỉ cần activate; nếu tên `.venv`, dùng `.\.venv\Scripts\Activate.ps1`. Máy dùng GPU NVIDIA cần PyTorch có hỗ trợ CUDA; mặc định script tự chọn GPU/CPU.
 
-## 2. Chạy detect
+Trọng số: `weights/best.pt` (chạy `git lfs pull` nếu mới clone). Nhấn **q** để thoát, `deactivate` để thoát môi trường ảo. Video trong `data/test` là dữ liệu cục bộ, không đi cùng repository.
 
-Video test:
+Mặc định `imgsz=640`, confidence YOLO `0.1`; ngưỡng tạo ID `0.6` trong `configs/bytetrack.yaml`. Thêm `--mode detect` để chạy YOLO thuần, hoặc `--output "data/test/result.mp4"` để lưu video.
 
-```powershell
-python scripts/realtime_lp_detect.py --mode detect --source "data/test/test2.mp4" --imgsz 640
-```
-
-Webcam:
-
-```powershell
-python scripts/realtime_lp_detect.py --mode detect --source 0 --imgsz 640
-```
-
-Trọng số mặc định: `weights/best.pt`. Nhấn **q** để thoát demo; chạy `deactivate` để thoát môi trường ảo.
+[Chi tiết cách chạy](docs/bytetrack_demo.md) · [Benchmark YOLO / CSRT / ByteTrack](docs/benchmark_yolo_csrt_bytetrack.md)
