@@ -61,7 +61,7 @@ Nếu không có chuỗi hợp lệ nào, kết quả quay về greedy + `fix_vn
 9. **Ràng buộc định dạng đáng giá khi định dạng thật sự cố định.** Biển VN có cấu trúc rõ ràng, nên ràng buộc lúc giải mã tăng 1.2 điểm mà không phải train lại. Cái giá là biển có mã tỉnh hoặc seri chưa từng gặp trong train sẽ bị ép thành chuỗi khác; ngữ pháp cần cập nhật khi có seri mới.
 
 ### Hạn chế còn lại
-- **Phân loại 1/2 dòng khi chạy thật.** LPRNet không tự phân loại; nó cần biết trước để chọn đầu vào 94 hay 188. Đoán theo tỉ lệ bbox (< 1.50 là 2 dòng) đúng 95.97% mẫu, nhưng trên 1000 ảnh Test, Acc giảm từ **93.70%** (dùng nhãn thật) xuống **90.70%** (đoán từ bbox). Hướng sửa: YOLO detect 2 lớp `plate_1row` / `plate_2row`, hoặc thêm bộ phân loại nhỏ trên ảnh crop.
+- **Phân loại 1/2 dòng khi chạy thật.** LPRNet không tự phân loại; nó cần biết trước để chọn đầu vào 94 hay 188. Đoán theo tỉ lệ bbox (< 1.50 là 2 dòng) đúng 95.97% mẫu, nhưng trên 1000 ảnh Test, Acc giảm từ **93.70%** (dùng nhãn thật) xuống **90.70%** (đoán từ bbox). Hướng sửa: dùng MobileNetV3-Small phân loại 1/2 dòng trên ảnh crop (đã nối ở Bước 15.1–15.5, xem mục 3.6).
 - CPU batch 1 khá chậm (107 ms biển 1 dòng, 224 ms biển 2 dòng). Muốn ≥ 20 FPS cần GPU, gom batch, hoặc xuất ONNX/OpenVINO.
 - Val trong lúc train dùng greedy; giải mã ràng buộc chỉ dùng cho Test và suy luận.
 
@@ -142,6 +142,25 @@ Nếu không có file, `PlateGrammar()` dùng ngữ pháp tổng quát (2 số +
 | Chuẩn hóa | `(pixel - 127.5) × 0.0078125`, ảnh **BGR**, tensor `[B, 3, 24, W]` | Giống LPRNet gốc |
 | Đọc ảnh | `cv2.IMREAD_IGNORE_ORIENTATION` | Bbox VNLP theo pixel gốc, không xoay theo EXIF |
 | Batch | Mỗi batch chỉ chứa **một** loại độ rộng | `WidthBatchNorm2d` chọn thống kê theo độ rộng của cả batch |
+
+
+### 3.6 Nối với MobileNetV3-Small phân loại 1/2 dòng (Bước 15.1–15.5)
+LPRNet là OCR chính; MobileNetV3-Small chỉ quyết định biển 1 dòng hay 2 dòng thay cho ngưỡng tỉ lệ bbox. LPRNet vẫn tự crop và tự tách 2 dòng như lúc train (không dùng ảnh tách–ghép 256×32 của CRNN).
+
+```
+khung hình + bbox YOLO → crop 3% → letterbox 128×128 → MobileNetV3-Small (one_row / two_rows)
+                       → crop LPRNet (3% / 6%) → 94×24 hoặc 188×24 → LPRNet → giải mã CTC
+```
+
+| Bước | Nội dung |
+| :--- | :--- |
+| 15.1 | Nạp `layout_best.pt` (sửa `LAYOUT_CKPT`), tự nạp `best_lprnet_vn_v5.pth`, xuất `plate_grammar.json` |
+| 15.2 | Tiền xử lý MobileNet (biên 3%, letterbox nền xám, chuẩn hóa ImageNet) và kiểm tra accuracy bố cục trên Val |
+| 15.3 | Test theo 3 nguồn bố cục: nhãn chuẩn / MobileNet / tỉ lệ bbox, cả greedy và ràng buộc; ghép cặp từng ảnh; lưu `pipeline_test_predictions.csv`, `pipeline_test_results.json` |
+| 15.4 | `recognize_plate_pipeline(img_bgr, bbox)` cho ảnh / video thật, trả bố cục, xác suất, cờ tách dòng, chuỗi greedy thô và chuỗi ràng buộc |
+| 15.5 | Thời gian từng công đoạn (mean / median / p95), cùng cách đo Bảng 4.5 của báo cáo |
+
+Chạy: Bước 1 → 10, rồi 15.1 → 15.5 (không cần train lại). Các tham số `LAYOUT_*` phải khớp notebook MobileNet. Tập Test của LPRNet (chia 70/15/15) khác `split_manifest.csv` của MobileNet/CRNN (80/10/10); đặt manifest vào `SPLIT_MANIFEST` để có thêm dòng kết quả chỉ trên ảnh cả hai mô hình chưa thấy.
 
 ---
 
