@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import unittest
 
-from scripts.realtime_lp_bytetrack import observations, parse_args, read_tracker_config
+from scripts.realtime_lp_ocr import observations, parse_args, read_tracker_config
 
 
 class TensorStub:
@@ -37,7 +37,7 @@ class DisplayTests(unittest.TestCase):
         args = parse_args([])
         self.assertEqual(args.conf, .1)
         self.assertEqual(args.imgsz, 640)
-        self.assertEqual(args.mode, "track")
+        self.assertFalse(args.adaptive)
 
 
 class ByteTrackIntegrationTests(unittest.TestCase):

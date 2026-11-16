@@ -1,6 +1,6 @@
 # Nhận diện biển số — YOLOv8n, ByteTrack và OCR
 
-Bản adaptive phát hiện và theo dõi biển số qua video, rồi đọc ký tự theo lịch riêng cho từng ID. Bản chỉ detect và tracking vẫn chạy bằng `scripts/realtime_lp_bytetrack.py`.
+Chạy `scripts/realtime_lp_ocr.py` để phát hiện và theo dõi biển số qua video, rồi đọc ký tự theo lịch riêng cho từng ID. Bật `--adaptive` để chạy bản có quét bổ sung và tìm lại biển vừa mất dấu.
 
 ## Cách chạy
 
@@ -32,7 +32,9 @@ flowchart TD
     B --> G["Gộp box trong tọa độ ảnh gốc"]
     B --> H{"Đến lịch quét 1280?"}
     H -->|Có| Y["YOLO 1280 toàn cảnh"]
-    H -->|Chưa| R{"Đến lịch ROI và có box nhỏ hoặc yếu?"}
+    H -->|Chưa| F["Ưu tiên tìm lại track vừa mất bbox quanh vị trí dự đoán"]
+    F --> G
+    F --> R{"Còn lượt quét và đến lịch ROI cho box nhỏ hoặc yếu?"}
     R -->|Có| C["Crop rộng từ ảnh gốc, chạy YOLO 640 và kiểm tra box"]
     R -->|Chưa| G
     Y --> G
@@ -48,6 +50,6 @@ flowchart TD
     D -->|Frame tiếp theo| A
 ```
 
-Mặc định quét 1280 mỗi **30 frame**. Ở các frame đến lịch ROI (**mỗi 5 frame**) mà không quét 1280, kiểm tra tối đa **2 vùng**. Box yếu từ lượt toàn cảnh vẫn có thể giúp ByteTrack nối ID đang có. OCR xét ID mới ngay, sau đó chờ ít nhất **10 frame** giữa hai lần đọc hoặc **30 frame** khi đã đạt `CONSENSUS`. Mỗi frame đọc tối đa **4 crop**. `CONSENSUS` phản ánh sự đồng thuận giữa các lần đọc và vẫn có thể sai.
+Mặc định quét 1280 mỗi **30 frame**. Các frame còn lại có tối đa **2 vùng ROI** mỗi frame. Ưu tiên tìm lại track đã xác nhận trong tối đa **3 frame** kể từ lần cuối có bbox khớp. Vị trí dự đoán chỉ dùng để chọn vùng tìm. Bbox đưa vào ByteTrack phải đến từ ảnh hiện tại. Nếu còn lượt, kiểm tra thêm box nhỏ hoặc yếu theo lịch **mỗi 5 frame**. Box yếu vẫn có thể giúp ByteTrack nối ID đang hoạt động.
 
-[Demo chỉ detect và tracking](docs/bytetrack_demo.md) · [Benchmark YOLO / CSRT / ByteTrack](docs/benchmark_yolo_csrt_bytetrack.md)
+Ở chế độ OCR theo lịch, ID mới phải xuất hiện **5 frame liên tiếp** trước lần đọc đầu. Sau đó, chờ ít nhất **10 frame** giữa hai lần đọc hoặc **30 frame** khi đã đạt `CONSENSUS`. Mỗi frame đọc tối đa **4 crop**. `CONSENSUS` phản ánh sự đồng thuận giữa các lần đọc và vẫn có thể sai.

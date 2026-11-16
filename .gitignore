@@ -25,6 +25,7 @@ data/
 # Local experiments and generated diagrams
 /experiments/
 /.archify/
+/benchmarks/
 
 # OS files
 .DS_Store

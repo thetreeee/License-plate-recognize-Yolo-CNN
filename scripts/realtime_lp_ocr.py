@@ -39,7 +39,37 @@ def resolve_device(value):
     return torch.device(f"cuda:{index}")
 
 
-def parse_args():
+def read_tracker_config(path):
+    import yaml
+
+    config = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(config, dict) or config.get("tracker_type") != "bytetrack":
+        raise ValueError("This demo requires a ByteTrack tracker config")
+    low, high, new = (float(config[key]) for key in
+                      ("track_low_thresh", "track_high_thresh", "new_track_thresh"))
+    if not 0 <= low < high <= 1 or not 0 < new <= 1:
+        raise ValueError("Require 0 <= track_low_thresh < track_high_thresh <= 1 and 0 < new_track_thresh <= 1")
+    return config
+
+
+def observations(result, tracking=True):
+    """Do not display raw low-score proposals when ByteTrack returned no IDs.
+
+    Some Ultralytics versions retain the original detections when the tracker
+    returns zero tracks. Those boxes must not masquerade as confirmed tracks.
+    """
+    boxes = result.boxes
+    if boxes is None or (tracking and not boxes.is_track):
+        return []
+    coords = boxes.xyxy.cpu().tolist()
+    scores = boxes.conf.cpu().tolist()
+    ids = boxes.id.cpu().tolist() if boxes.is_track else [None] * len(coords)
+    return [dict(id=int(identity) if identity is not None else None,
+                 xyxy=[float(value) for value in box], confidence=float(score))
+            for box, score, identity in zip(coords, scores, ids)]
+
+
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", default="0", help="Video path or webcam index")
     parser.add_argument("--weights", type=Path, default=ROOT / "weights/best.pt")
@@ -53,7 +83,7 @@ def parse_args():
     parser.add_argument("--high-interval", type=int, default=30)
     parser.add_argument("--roi-interval", type=int, default=5)
     parser.add_argument("--max-rois", type=int, default=2)
-    parser.add_argument("--conf", type=float, default=.1)
+    parser.add_argument("--conf", type=float, default=0.2)
     parser.add_argument("--iou", type=float, default=.45)
     parser.add_argument("--ocr-conf", type=float, default=.6, help="Minimum YOLO score for an OCR crop")
     parser.add_argument("--ocr-interval", type=int, default=10)
@@ -65,7 +95,7 @@ def parse_args():
     parser.add_argument("--paced", action="store_true", help="Limit playback to source FPS; default measures processing speed")
     parser.add_argument("--max-frames", type=int, default=0)
     parser.add_argument("--output-dir", type=Path, default=ROOT / "runs/plate_recognition")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if min(args.imgsz, args.ocr_interval, args.stable_interval, args.ocr_batch) < 1 or args.max_frames < 0:
         parser.error("Sizes/intervals/batch must be positive; max-frames must be >= 0")
     if not all(0 < value <= 1 for value in (args.conf, args.iou, args.ocr_conf)) or args.min_blur < 0:
@@ -76,14 +106,13 @@ def parse_args():
     return args
 
 
-def main():
+def main(reader_factory=None):
     args = parse_args()
     import cv2
     import numpy as np
     import torch
     from ultralytics import YOLO
     from scripts.lpr_models import PlateReader, crop_from_box, check_weight_file, synchronize
-    from scripts.realtime_lp_bytetrack import observations, read_tracker_config
 
     torch.set_num_threads(4)
     cv2.setNumThreads(1)
@@ -109,7 +138,8 @@ def main():
 
     if not args.adaptive:
         detector.add_callback("on_predict_postprocess_end", capture_raw)
-    reader = PlateReader(args.ocr_weights, args.layout_weights, device)
+    reader = (reader_factory or PlateReader)(args.ocr_weights, args.layout_weights, device)
+    ocr_name = getattr(reader, "name", "CRNN")
     detector_device = str(device.index) if device.type == "cuda" else "cpu"
     kwargs = dict(device=detector_device, imgsz=args.imgsz, conf=args.conf, iou=args.iou,
                   classes=[0], half=False, verbose=False)
@@ -137,7 +167,7 @@ def main():
     source_fps = capture.get(cv2.CAP_PROP_FPS)
     if not 0 < source_fps < 1000:
         source_fps = 30.
-    print(f"Device {device} | FP32, imgsz {args.imgsz} | {detection_mode} | OCR {mode}", flush=True)
+    print(f"Device {device} | FP32, imgsz {args.imgsz} | {detection_mode} | {ocr_name} {mode}", flush=True)
     try:
         ok, frame = capture.read()
         if not ok:
@@ -246,7 +276,7 @@ def main():
             consensus_frames += any_consensus
             elapsed_ms = (time.perf_counter() - loop_start) * 1000
             for line, label in enumerate([
-                f"YOLO + ByteTrack + MobileNet + CRNN | {detection_mode}",
+                f"YOLO + ByteTrack + MobileNet + {ocr_name} | {detection_mode}",
                 f"Process: {1000/max(elapsed_ms,.001):.1f} FPS | dets: {len(raw_detections)} | tracks: {len(tracks)}",
                 f"YOLO calls: {sum(adaptive.counts[k] for k in ('base_calls','high_calls','roi_calls')) if adaptive else frames+1} | OCR crops: {ocr_crops} | batch: {batch_ms:.0f}ms",
             ]):
@@ -258,7 +288,7 @@ def main():
                                         ocr_ms=batch_ms, adaptive=detection_info), ensure_ascii=False)+"\n")
             quit_requested = False
             if args.show:
-                cv2.imshow("YOLO + ByteTrack + OCR", annotated)
+                cv2.imshow(f"YOLO + ByteTrack + {ocr_name}", annotated)
                 quit_requested = cv2.waitKey(1) & 0xFF in (ord("q"), 27)
             frames += 1
             # Include decoding the next frame in loop timing; exclude deliberate pacing.
@@ -306,7 +336,9 @@ def main():
         tracker_config=read_tracker_config(args.tracker),
         peak_cuda_allocated_mb=torch.cuda.max_memory_allocated(device)/2**20 if device.type=="cuda" else None,
         reader_config=vars(reader.config),
-        provenance=json.loads((ROOT / "weights/ocr_provenance.json").read_text(encoding="utf-8")),
+        ocr_backend=ocr_name,
+        provenance=(reader.provenance if reader_factory else
+                    json.loads((ROOT / "weights/ocr_provenance.json").read_text(encoding="utf-8"))),
         notes=["No ground truth: repeated agreement and nonempty OCR are not accuracy.",
                "Every-frame mode uses ByteTrack too; it bypasses crop quality gates and batch cap.",
                "Scheduled mode combines intervals and quality gates; this is not an interval-only comparison.",

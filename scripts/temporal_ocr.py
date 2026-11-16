@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 @dataclass
 class ReadingState:
     last_seen: int
+    visible_streak: int = 1
     last_attempt: int = -1000000
     attempts: int = 0
     latest: str = ""
@@ -17,6 +18,8 @@ class ReadingState:
 
 
 class TemporalOCR:
+    FIRST_READ_FRAMES = 5
+
     def __init__(self, interval=10, stable_interval=30, retention=60):
         self.interval = interval
         self.stable_interval = stable_interval
@@ -25,15 +28,25 @@ class TemporalOCR:
 
     def observe(self, identities, frame):
         for identity in identities:
-            self.states.setdefault(identity, ReadingState(frame)).last_seen = frame
+            state = self.states.get(identity)
+            if state is None or frame - state.last_seen > self.retention:
+                self.states[identity] = ReadingState(frame)
+            elif frame > state.last_seen:
+                state.visible_streak = state.visible_streak + 1 if frame - state.last_seen == 1 else 1
+                state.last_seen = frame
         for identity in list(self.states):
             if frame - self.states[identity].last_seen > self.retention:
                 del self.states[identity]
 
     def due(self, identity, frame, every_frame=False):
         state = self.states[identity]
+        if every_frame:
+            return True
+        # shortcut: skip short-lived IDs; persistent ID switches need track association fixes.
+        if not state.attempts and (state.last_seen != frame or state.visible_streak < self.FIRST_READ_FRAMES):
+            return False
         interval = self.stable_interval if state.consensus else self.interval
-        return every_frame or frame - state.last_attempt >= interval
+        return frame - state.last_attempt >= interval
 
     def attempted(self, identity, frame):
         state = self.states[identity]

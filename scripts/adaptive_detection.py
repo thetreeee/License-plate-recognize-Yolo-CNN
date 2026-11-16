@@ -1,11 +1,13 @@
 """Budgeted full-frame/ROI detection, followed by one ByteTrack update per frame."""
 from collections import Counter
+from copy import copy
 from types import SimpleNamespace
 
 import numpy as np
 import torch
 from torchvision.ops import batched_nms
 from ultralytics.engine.results import Boxes
+from ultralytics.trackers.basetrack import TrackState
 from ultralytics.trackers.byte_tracker import BYTETracker
 
 
@@ -55,11 +57,58 @@ class AdaptiveDetector:
     def predict(self, image, size):
         return self.model.predict(image, **{**self.kwargs, "imgsz": size})[0]
 
+    def scan_region(self, frame, region):
+        x1, y1, x2, y2 = region
+        refined = self.predict(frame[y1:y2, x1:x2], self.kwargs["imgsz"])
+        rows = refined.boxes.data.detach().cpu().numpy().copy()
+        rows[:, [0, 2]] += x1
+        rows[:, [1, 3]] += y1
+        return rows
+
+    def matchable(self, track, rows):
+        cfg = self.tracker.args
+        iou = overlap(track.xyxy, rows)
+        scores = rows[:, 4]
+        similarity = iou * scores if cfg.fuse_score else iou
+        high = (scores >= cfg.track_high_thresh) & (similarity >= 1 - cfg.match_thresh)
+        low = ((scores > cfg.track_low_thresh) & (scores < cfg.track_high_thresh) &
+               (similarity >= .5) & (track.state == TrackState.Tracked))
+        return (rows[:, 5] == track.cls) & (high | low)
+
+    def recover_tracks(self, frame, base, groups, info):
+        tracker = self.tracker
+        # shortcut: only bridge brief gaps of at most three frames; use camera motion compensation for longer jumps.
+        recent = [copy(track) for track in (*tracker.tracked_stracks, *tracker.lost_stracks)
+                  if track.is_activated and tracker.frame_id + 1 - track.end_frame <= 3]
+        tracker.multi_predict(recent)
+        for track in sorted(recent, key=lambda track: -track.end_frame):
+            if len(info["roi_regions"]) >= self.max_rois:
+                break
+            if self.matchable(track, base).any():
+                continue
+            region = crop_region(track.xyxy, frame.shape)
+            x1, y1, x2, y2 = region
+            if x2 <= x1 or y2 <= y1:
+                continue
+            rows = self.scan_region(frame, region)
+            iou = overlap(track.xyxy, rows)
+            eligible = np.flatnonzero(self.matchable(track, rows) & (iou >= .3))
+            if len(eligible):
+                best = eligible[iou[eligible].argmax()]
+                groups.append(rows[best:best+1])
+                base = np.concatenate((base, rows[best:best+1]))
+                self.counts["recovery_candidates"] += 1
+            info["roi_regions"].append(list(region))
+            info["recovery_ids"].append(int(track.track_id))
+            self.counts["roi_calls"] += 1
+            self.counts["recovery_calls"] += 1
+
     def step(self, frame, index):
         result = self.predict(frame, self.kwargs["imgsz"])
         base = result.boxes.data.detach().cpu().numpy().copy()
         groups = [base]
-        info = dict(base_boxes=len(base), high_scan=False, roi_regions=[], roi_verified=0)
+        info = dict(base_boxes=len(base), high_scan=False, roi_regions=[], roi_verified=0,
+                    recovery_ids=[])
         self.counts["base_calls"] += 1
         self.recent_regions = [(i, box) for i, box in self.recent_regions
                                if index-i < 2*self.roi_interval]
@@ -69,23 +118,26 @@ class AdaptiveDetector:
             groups.append(high.boxes.data.detach().cpu().numpy())
             info["high_scan"] = True
             self.counts["high_calls"] += 1
-        elif index % self.roi_interval == 0:
+        else:
+            self.recover_tracks(frame, base, groups, info)
+        if not info["high_scan"] and index % self.roi_interval == 0:
             scale = self.kwargs["imgsz"] / max(frame.shape[:2])
             small = np.minimum(base[:, 2]-base[:, 0], base[:, 3]-base[:, 1]) * scale < 32
             candidates = base[small | (base[:, 4] < self.strong)]
             candidates = candidates[np.argsort(-candidates[:, 4], kind="stable")]
             for seed in candidates:
+                if len(info["roi_regions"]) >= self.max_rois:
+                    break
                 region = np.array(crop_region(seed[:4], frame.shape))
                 if any(overlap(region, old[None])[0] > .3 for _, old in self.recent_regions):
                     continue
-                x1, y1, x2, y2 = region
-                crop = frame[y1:y2, x1:x2]
-                if crop.size == 0:
+                recovery_regions = np.asarray(info["roi_regions"][:len(info["recovery_ids"])]).reshape(-1, 4)
+                if (overlap(region, recovery_regions) > .3).any():
                     continue
-                refined = self.predict(crop, self.kwargs["imgsz"])
-                rows = refined.boxes.data.detach().cpu().numpy().copy()
-                rows[:, [0, 2]] += x1
-                rows[:, [1, 3]] += y1
+                x1, y1, x2, y2 = region
+                if x2 <= x1 or y2 <= y1:
+                    continue
+                rows = self.scan_region(frame, region)
                 # A crop must confirm its candidate geometrically; unrelated detections
                 # and weaker crop predictions cannot promote a low-score proposal.
                 rows = rows[(overlap(seed[:4], rows) >= .2) & (rows[:, 5] == seed[5]) &
@@ -95,8 +147,6 @@ class AdaptiveDetector:
                 info["roi_regions"].append(region.tolist())
                 info["roi_verified"] += len(rows)
                 self.counts["roi_calls"] += 1
-                if len(info["roi_regions"]) >= self.max_rois:
-                    break
         # Keep weak original observations for ByteTrack's second association pass;
         # neither a small box nor an extra inference changes the new-ID threshold.
         merged = merge_boxes(groups, frame.shape, self.kwargs["iou"])

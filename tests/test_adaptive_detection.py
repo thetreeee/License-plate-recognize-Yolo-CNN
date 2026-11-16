@@ -39,7 +39,7 @@ class AdaptiveTests(unittest.TestCase):
 
     def test_high_scan_merges_and_updates_tracker_once(self):
         box = [100, 100, 150, 120, .8, 0]
-        detector = self.detector([[box], [box], []])
+        detector = self.detector([[box], [box], [], []])
         result, raw, info = detector.step(np.zeros((200, 300, 3), np.uint8), 0)
         self.assertEqual(len(raw), 1)
         self.assertTrue(result.boxes.is_track)
@@ -50,6 +50,34 @@ class AdaptiveTests(unittest.TestCase):
         self.assertEqual(detector.tracker.frame_id, 2)
         self.assertEqual(len(result.boxes), 0)
         self.assertEqual(raw, [])  # Never reuse stale detections on the next frame.
+
+    def test_recovery_restores_same_id_with_fresh_crop_detection(self):
+        box = [100, 100, 150, 120, .8, 0]
+        region = crop_region(np.array(box[:4]), (400, 600))
+        x, y = region[:2]
+        recovered = [102-x, 100-y, 152-x, 120-y, .55, 0]
+        detector = self.detector([[box], [box], [], [], [], [recovered]])
+        frame = np.zeros((400, 600, 3), np.uint8)
+        initial, _, _ = detector.step(frame, 0)
+        missing, _, _ = detector.step(frame, 1)
+        result, raw, info = detector.step(frame, 2)
+        self.assertEqual(len(missing.boxes), 0)
+        self.assertEqual(result.boxes.id.tolist(), initial.boxes.id.tolist())
+        np.testing.assert_allclose(raw[0]["xyxy"], [102, 100, 152, 120])
+        self.assertEqual(info["recovery_ids"], initial.boxes.id.int().tolist())
+        self.assertEqual(detector.tracker.frame_id, 3)
+
+    def test_recovery_stops_after_three_frames_without_detection(self):
+        box = [100, 100, 150, 120, .8, 0]
+        detector = self.detector([[box], [box]] + [[]] * 7)
+        frame = np.zeros((400, 600, 3), np.uint8)
+        detector.step(frame, 0)
+        for index in range(1, 5):
+            result, raw, info = detector.step(frame, index)
+            self.assertEqual(raw, [])
+            self.assertEqual(len(result.boxes), 0)
+            self.assertEqual(len(info["recovery_ids"]), int(index <= 3))
+        self.assertEqual(detector.counts["recovery_calls"], 3)
 
     def test_roi_maps_coordinates_and_confirms_only_matching_seed(self):
         seed = [100, 100, 140, 120, .2, 0]

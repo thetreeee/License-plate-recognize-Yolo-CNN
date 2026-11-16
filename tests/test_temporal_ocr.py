@@ -9,14 +9,21 @@ def reading(text, ok=True, error=""):
 
 
 class TemporalOCRTests(unittest.TestCase):
-    def test_new_track_reads_immediately_and_respects_interval(self):
+    def test_new_track_waits_five_consecutive_frames_and_respects_interval(self):
         scheduler = TemporalOCR()
-        scheduler.observe([1], 0)
-        self.assertTrue(scheduler.due(1, 0))
-        scheduler.attempted(1, 0)
-        self.assertFalse(scheduler.due(1, 9))
-        self.assertTrue(scheduler.due(1, 10))
-        self.assertTrue(scheduler.due(1, 1, every_frame=True))
+        for frame in range(4):
+            scheduler.observe([1], frame)
+            self.assertFalse(scheduler.due(1, frame))
+        self.assertTrue(scheduler.due(1, 3, every_frame=True))
+        scheduler.observe([], 4)
+        for frame in range(5, 9):
+            scheduler.observe([1], frame)
+            self.assertFalse(scheduler.due(1, frame))
+        scheduler.observe([1], 9)
+        self.assertTrue(scheduler.due(1, 9))
+        scheduler.attempted(1, 9)
+        self.assertFalse(scheduler.due(1, 18))
+        self.assertTrue(scheduler.due(1, 19))
 
     def test_consensus_requires_three_agreements_and_remains_refreshable(self):
         scheduler = TemporalOCR()
