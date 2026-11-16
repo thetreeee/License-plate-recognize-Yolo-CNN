@@ -24,6 +24,8 @@ python scripts/realtime_lp_ocr.py --source "data/test/test2.mp4" --adaptive --sh
 
 Nhấn **Q** hoặc **Esc** để dừng. Bỏ `--show` khi đo tốc độ không cần cửa sổ, bỏ `--adaptive` để chạy YOLO toàn cảnh mỗi frame + ByteTrack + OCR. Mặc định tự chọn CPU hoặc GPU. Muốn dùng GPU NVIDIA, môi trường cần PyTorch và torchvision có hỗ trợ CUDA. Mỗi lượt chạy lưu video, log từng frame và thống kê ở `runs/plate_recognition/`. Video trong `data/` do bạn tự cung cấp.
 
+Số ID trên bbox và trong log `CONSENSUS` được cấp lần lượt từ 1 khi mỗi track xuất hiện lần đầu. Số đó được giữ nếu cùng track xuất hiện lại. Trong `frames.jsonl`, `tracks[].display_id` là số hiển thị và `tracks[].id` là ID ByteTrack dùng để đối chiếu `readings.json` và các lần `id_relinks`.
+
 ## Pipeline adaptive
 
 ```mermaid

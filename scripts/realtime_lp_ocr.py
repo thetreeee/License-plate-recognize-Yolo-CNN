@@ -164,7 +164,7 @@ def main(reader_factory=None):
     visible_frames = consensus_frames = 0
     consensus_events = 0
     raw_frames = raw_boxes = strong_boxes = track_observations = max_tracks = 0
-    ids_seen, readings_by_id = set(), {}
+    display_ids, readings_by_id = {}, {}
     track_times, ocr_times, loop_times = [], [], []
     stages = Counter()
     scheduler = TemporalOCR(args.ocr_interval, args.stable_interval)
@@ -210,7 +210,6 @@ def main(reader_factory=None):
             track_ms = (time.perf_counter() - start) * 1000
             track_times.append(track_ms)
             scheduler.observe([track["id"] for track in tracks], frames)
-            ids_seen.update(track["id"] for track in tracks)
             eligible_crops += len(tracks)
             visible_frames += bool(tracks)
             candidates = []
@@ -218,6 +217,7 @@ def main(reader_factory=None):
             h, w = frame.shape[:2]
             for track in tracks:
                 identity = track["id"]
+                track["display_id"] = display_ids.setdefault(identity, len(display_ids) + 1)
                 if not scheduler.due(identity, frames, args.ocr_every_frame):
                     continue
                 x1, y1, x2, y2 = track["xyxy"]
@@ -255,7 +255,7 @@ def main(reader_factory=None):
                         agreeing = sum(text == state.text for text in state.votes)
                         print(
                             f"[CONSENSUS] frame={frames} | time={frames/source_fps:.2f}s | "
-                            f"ID={identity} | plate={state.text} | "
+                            f"ID={display_ids[identity]} | track_id={identity} | plate={state.text} | "
                             f"votes={agreeing}/{len(state.votes)} | layout={state.layout}",
                             flush=True,
                         )
@@ -272,7 +272,7 @@ def main(reader_factory=None):
                 color = (40, 220, 40) if state.consensus else (0, 190, 255)
                 x1, y1, x2, y2 = [round(value) for value in track["xyxy"]]
                 cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
-                label = f"ID {track['id']} {text} {status}"
+                label = f"ID {track['display_id']} {text} {status}"
                 cv2.putText(annotated, label, (max(0,x1), max(90,y1-8)),
                             cv2.FONT_HERSHEY_SIMPLEX, .44, color, 1, cv2.LINE_AA)
                 rows.append(dict(**track, text=state.text, latest=state.latest, layout=state.layout,
@@ -324,7 +324,7 @@ def main(reader_factory=None):
         ocr_batches=ocr_batches,
         ocr_crops=ocr_crops, visible_track_observations=eligible_crops,
         skipped_ocr_percent=100*(1-ocr_crops/eligible_crops) if eligible_crops else None,
-        unique_ids=len(ids_seen), frames_with_tracks=visible_frames, frames_with_consensus=consensus_frames,
+        unique_ids=len(display_ids), frames_with_tracks=visible_frames, frames_with_consensus=consensus_frames,
         consensus_events=consensus_events,
         raw_detection_frames=raw_frames, raw_detection_boxes=raw_boxes, raw_boxes_ge_06=strong_boxes,
         track_observations=track_observations, max_simultaneous_tracks=max_tracks,
