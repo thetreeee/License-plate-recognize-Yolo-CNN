@@ -1,0 +1,21 @@
+{
+  "source_branch": "origin/feat/ocr",
+  "source_commit": "7c81c7f25c1e77c687e440972daf49bbd67289d8",
+  "files": {
+    "scripts/lpr_models.py": "4c0e66e3e520d9af24a1cfdec54d8592c054fdcf72d8ed89d9644a4522c43ad1"
+  },
+  "checkpoints": {
+    "yolo": {
+      "sha256": "5ca92037eb4f86ee629a68895e793c449bf793fc9da21e9639630159d03b7d53",
+      "bytes": 6256042
+    },
+    "crnn": {
+      "sha256": "bef54a3ee05659ed6ccbe8b3e66cfef307d62d26faa69c0ba2e99f441096fe94",
+      "bytes": 98518091
+    },
+    "layout": {
+      "sha256": "e1e9cce636fcdb619d6425723371f6560bb54165f9b62438ab97208b7cc9d885",
+      "bytes": 18515161
+    }
+  }
+}

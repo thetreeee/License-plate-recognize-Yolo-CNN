@@ -1,4 +1,4 @@
-ultralytics
+ultralytics==8.4.34
 lap>=0.5.12
 opencv-contrib-python
 numpy
