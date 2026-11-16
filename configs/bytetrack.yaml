@@ -1,0 +1,11 @@
+# ByteTrack for the single-class license plate detector.
+# Keep low-score observations for matching; require stronger evidence for new IDs.
+tracker_type: bytetrack
+track_high_thresh: 0.5
+track_low_thresh: 0.1
+new_track_thresh: 0.6
+track_buffer: 30
+match_thresh: 0.8
+# In Ultralytics 8.4.34 score fusion also affects second-stage matching.
+# IoU-only matching keeps low-score rescue usable with the thresholds above.
+fuse_score: false

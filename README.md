@@ -1,68 +1,53 @@
-# 🚗 License Plate Recognition — YOLOv8n + OCR
+# Nhận diện biển số — YOLOv8n, ByteTrack và OCR
 
-Nhận diện biển số xe sử dụng **YOLOv8n** để detect biển số, kết hợp **OCR** để đọc ký tự.
+Bản adaptive phát hiện và theo dõi biển số qua video, rồi đọc ký tự theo lịch riêng cho từng ID. Bản chỉ detect và tracking vẫn chạy bằng `scripts/realtime_lp_bytetrack.py`.
 
-## 📁 Cấu trúc project
+## Cách chạy
 
-```
-├── weights/          # Trọng số model đã train
-│   └── best.pt
-├── data/             # Dataset (images + labels)
-│   └── data.rar
-├── notebooks/        # Jupyter Notebooks (training pipeline)
-│   └── YOLOv8n_License_Plate_Detection_Pipeline.ipynb
-├── scripts/          # Scripts chạy inference
-│   └── realtime_lp_detect.py
-├── .gitignore
-├── .gitattributes    # Git LFS config
-└── README.md
-```
+Chạy trong PowerShell tại thư mục gốc project. Cần cài Git LFS để tải ba checkpoint trong `weights/`. Tạo môi trường ảo một lần, ưu tiên Python 3.11.
 
-## ⚙️ Cài đặt
-
-```bash
-# 1. Clone repo
-git clone https://github.com/thetreeee/License-plate-recognize-Yolo-CNN.git
-cd License-plate-recognize-Yolo-CNN
-
-# 2. Pull file lớn (weights + data) qua Git LFS
+```powershell
+git lfs install
 git lfs pull
-
-# 3. Cài dependencies
-pip install -r requirements.txt
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
 ```
 
-## 🚀 Sử dụng
+```powershell
+# Webcam mặc định, đổi 0 thành 1 nếu dùng camera thứ hai
+python scripts/realtime_lp_ocr.py --source 0 --adaptive --show
 
-### Detect biển số real-time (Webcam)
-
-```bash
-python scripts/realtime_lp_detect.py --weights weights/best.pt
+# Video cục bộ, thay bằng đường dẫn video của bạn
+python scripts/realtime_lp_ocr.py --source "data/test/test2.mp4" --adaptive --show --paced
 ```
 
-**Tùy chọn:**
-| Argument | Default | Mô tả |
-|----------|---------|-------|
-| `--weights` | `weights/best.pt` | Đường dẫn trọng số |
-| `--source` | `0` | Index webcam (0, 1, ...) |
-| `--conf` | `0.1` | Ngưỡng confidence |
-| `--iou` | `0.45` | Ngưỡng NMS IoU |
-| `--imgsz` | `1280` | Kích thước ảnh inference |
+Nhấn **Q** hoặc **Esc** để dừng. Bỏ `--show` khi đo tốc độ không cần cửa sổ, bỏ `--adaptive` để chạy YOLO toàn cảnh mỗi frame + ByteTrack + OCR. Mặc định tự chọn CPU hoặc GPU. Muốn dùng GPU NVIDIA, môi trường cần PyTorch và torchvision có hỗ trợ CUDA. Mỗi lượt chạy lưu video, log từng frame và thống kê ở `runs/plate_recognition/`. Video trong `data/` do bạn tự cung cấp.
 
-> Nhấn **`q`** để thoát.
+## Pipeline adaptive
 
-### Training model
+```mermaid
+flowchart TD
+    A["Frame gốc"] --> B["YOLO 640 toàn cảnh mỗi frame"]
+    B --> G["Gộp box trong tọa độ ảnh gốc"]
+    B --> H{"Đến lịch quét 1280?"}
+    H -->|Có| Y["YOLO 1280 toàn cảnh"]
+    H -->|Chưa| R{"Đến lịch ROI và có box nhỏ hoặc yếu?"}
+    R -->|Có| C["Crop rộng từ ảnh gốc, chạy YOLO 640 và kiểm tra box"]
+    R -->|Chưa| G
+    Y --> G
+    C --> G
+    G --> N["Loại box trùng bằng NMS"]
+    N --> T["ByteTrack ghép bbox và quản lý ID"]
+    T --> O{"ID đến lịch, crop đạt chất lượng và được chọn vào batch?"}
+    O -->|Có| M["MobileNet phân loại số dòng → xử lý hàng → CRNN + CTC"]
+    M --> V["Tổng hợp kết quả chữ theo ID"]
+    O -->|Chưa| U["Dùng chữ đã lưu nếu có"]
+    V --> D["Hiển thị và ghi log khi đồng thuận thay đổi"]
+    U --> D
+    D -->|Frame tiếp theo| A
+```
 
-Mở notebook `notebooks/YOLOv8n_License_Plate_Detection_Pipeline.ipynb` trên **Google Colab** (GPU T4).
+Mặc định quét 1280 mỗi **30 frame**. Ở các frame đến lịch ROI (**mỗi 5 frame**) mà không quét 1280, kiểm tra tối đa **2 vùng**. Box yếu từ lượt toàn cảnh vẫn có thể giúp ByteTrack nối ID đang có. OCR xét ID mới ngay, sau đó chờ ít nhất **10 frame** giữa hai lần đọc hoặc **30 frame** khi đã đạt `CONSENSUS`. Mỗi frame đọc tối đa **4 crop**. `CONSENSUS` phản ánh sự đồng thuận giữa các lần đọc và vẫn có thể sai.
 
-## 📝 Thêm data / model mới
-
-- **Thêm trọng số**: Bỏ file `.pt` vào folder `weights/`
-- **Thêm dataset**: Bỏ file vào folder `data/`
-- **Thêm script**: Bỏ file `.py` vào folder `scripts/`
-
-## 🛠️ Tech Stack
-
-- **YOLOv8n** (Ultralytics) — Object Detection
-- **OpenCV** — Video capture & display
-- **Python 3.x**
+[Demo chỉ detect và tracking](docs/bytetrack_demo.md) · [Benchmark YOLO / CSRT / ByteTrack](docs/benchmark_yolo_csrt_bytetrack.md)
