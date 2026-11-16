@@ -43,13 +43,17 @@ def merge_boxes(groups, shape, threshold):
 
 class AdaptiveDetector:
     def __init__(self, model, kwargs, tracker_config, high_imgsz=1280,
-                 high_interval=30, roi_interval=5, max_rois=2):
+                 high_interval=30, roi_interval=5, max_rois=2, relink=False):
         if min(high_interval, roi_interval, max_rois) < 1 or high_imgsz <= kwargs["imgsz"]:
             raise ValueError("Positive intervals/ROI budget and high-imgsz > imgsz are required")
         self.model, self.kwargs = model, dict(kwargs)
         self.high_imgsz, self.high_interval = high_imgsz, high_interval
         self.roi_interval, self.max_rois = roi_interval, max_rois
-        self.tracker = BYTETracker(SimpleNamespace(**tracker_config), frame_rate=30)
+        tracker_type = BYTETracker
+        if relink:
+            from scripts.short_gap_tracker import ShortGapByteTracker
+            tracker_type = ShortGapByteTracker
+        self.tracker = tracker_type(SimpleNamespace(**tracker_config), frame_rate=30)
         self.strong = tracker_config["new_track_thresh"]
         self.counts = Counter()
         self.recent_regions = []
@@ -152,6 +156,9 @@ class AdaptiveDetector:
         merged = merge_boxes(groups, frame.shape, self.kwargs["iou"])
         raw = [dict(xyxy=row[:4].tolist(), confidence=float(row[4])) for row in merged]
         tracks = self.tracker.update(Boxes(merged, frame.shape[:2]), frame)
+        if relinks := getattr(self.tracker, "last_relinks", None):
+            info["id_relinks"] = relinks
+            self.counts["id_relinks"] += len(relinks)
         result.update(boxes=torch.as_tensor(tracks[:, :-1]) if len(tracks)
                       else torch.empty((0, 7)))
         info["merged_boxes"] = len(merged)

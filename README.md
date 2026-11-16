@@ -41,7 +41,8 @@ flowchart TD
     C --> G
     G --> N["Loại box trùng bằng NMS"]
     N --> T["ByteTrack ghép bbox và quản lý ID"]
-    T --> O{"ID đến lịch, crop đạt chất lượng và được chọn vào batch?"}
+    T --> K["Nếu bật relink, thử nối lại track vừa hụt"]
+    K --> O{"ID đến lịch, crop đạt chất lượng và được chọn vào batch?"}
     O -->|Có| M["MobileNet phân loại số dòng → xử lý hàng → CRNN + CTC"]
     M --> V["Tổng hợp kết quả chữ theo ID"]
     O -->|Chưa| U["Dùng chữ đã lưu nếu có"]
@@ -51,5 +52,11 @@ flowchart TD
 ```
 
 Mặc định quét 1280 mỗi **30 frame**. Các frame còn lại có tối đa **2 vùng ROI** mỗi frame. Ưu tiên tìm lại track đã xác nhận trong tối đa **3 frame** kể từ lần cuối có bbox khớp. Vị trí dự đoán chỉ dùng để chọn vùng tìm. Bbox đưa vào ByteTrack phải đến từ ảnh hiện tại. Nếu còn lượt, kiểm tra thêm box nhỏ hoặc yếu theo lịch **mỗi 5 frame**. Box yếu vẫn có thể giúp ByteTrack nối ID đang hoạt động.
+
+Thêm `--relink` cùng `--adaptive` để thử ghép lại ID sau tối đa **3 frame bị hụt**. ByteTrack ưu tiên các cặp đã ghép theo cách cũ, rồi xét tâm và kích thước từ các bbox YOLO gần nhất của track chưa ghép. Chỉ nối khi một bbox mới khớp rõ một-một với track đã xác nhận. `frames.jsonl` ghi `id_relinks` ở frame có lượt ghép này. Bỏ `--relink` để đối chứng.
+
+```powershell
+python scripts/realtime_lp_ocr.py --source "data/test/test6.mp4" --adaptive --relink --show --paced
+```
 
 Ở chế độ OCR theo lịch, ID mới phải xuất hiện **5 frame liên tiếp** trước lần đọc đầu. Sau đó, chờ ít nhất **10 frame** giữa hai lần đọc hoặc **30 frame** khi đã đạt `CONSENSUS`. Mỗi frame đọc tối đa **4 crop**. `CONSENSUS` phản ánh sự đồng thuận giữa các lần đọc và vẫn có thể sai.

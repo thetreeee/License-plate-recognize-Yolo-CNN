@@ -79,6 +79,7 @@ def parse_args(argv=None):
     parser.add_argument("--device", default="auto")
     parser.add_argument("--imgsz", type=int, default=640)
     parser.add_argument("--adaptive", action="store_true", help="Scheduled high-resolution and ROI checks before ByteTrack")
+    parser.add_argument("--relink", action="store_true", help="Try a short-gap motion match before creating a new ID (requires --adaptive)")
     parser.add_argument("--high-imgsz", type=int, default=1280)
     parser.add_argument("--high-interval", type=int, default=30)
     parser.add_argument("--roi-interval", type=int, default=5)
@@ -103,6 +104,8 @@ def parse_args(argv=None):
     if args.adaptive and (args.high_imgsz <= args.imgsz or
                          min(args.high_interval, args.roi_interval, args.max_rois) < 1):
         parser.error("Adaptive mode requires high-imgsz > imgsz and positive intervals/ROI budget")
+    if args.relink and not args.adaptive:
+        parser.error("--relink requires --adaptive")
     return args
 
 
@@ -147,9 +150,10 @@ def main(reader_factory=None):
     if args.adaptive:
         from scripts.adaptive_detection import AdaptiveDetector
         adaptive = AdaptiveDetector(detector, kwargs, read_tracker_config(args.tracker),
-                                    args.high_imgsz, args.high_interval, args.roi_interval, args.max_rois)
+                                    args.high_imgsz, args.high_interval, args.roi_interval, args.max_rois,
+                                    relink=args.relink)
     mode = "every_frame" if args.ocr_every_frame else "scheduled"
-    detection_mode = "adaptive" if args.adaptive else "full_frame"
+    detection_mode = "adaptive_relink" if args.relink else ("adaptive" if args.adaptive else "full_frame")
     name = Path(args.source).stem if not args.source.isdigit() else "webcam"
     folder = args.output_dir / (name + "_" + detection_mode + "_" + mode + "_" + time.strftime("%Y%m%d_%H%M%S"))
     folder.mkdir(parents=True, exist_ok=False)

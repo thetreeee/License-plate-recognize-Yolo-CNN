@@ -35,7 +35,7 @@ class DisplayTests(unittest.TestCase):
 
     def test_cli_defaults_preserve_low_score_candidates(self):
         args = parse_args([])
-        self.assertEqual(args.conf, .1)
+        self.assertEqual(args.conf, .2)
         self.assertEqual(args.imgsz, 640)
         self.assertFalse(args.adaptive)
 
