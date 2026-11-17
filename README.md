@@ -1,10 +1,10 @@
-# Nhận diện biển số — YOLOv8n, ByteTrack và OCR
+# Nhận diện biển số — YOLOv8n, ByteTrack và LPRNet v5
 
-Chạy `scripts/realtime_lp_ocr.py` để phát hiện, theo dõi và đọc biển số. Mặc định chương trình quét bổ sung, nối lại ID vừa mất dấu, mở cửa sổ kết quả và giới hạn tốc độ phát theo FPS nguồn.
+Chạy `scripts/realtime_lp_ocr.py` để phát hiện, theo dõi và đọc biển số. MobileNet phân loại biển một hoặc hai dòng, sau đó LPRNet v5 đọc ký tự. Chế độ mặc định bật quét bổ sung, nối lại ID, cửa sổ hiển thị và phát theo FPS nguồn.
 
 ## Cách chạy
 
-Chạy trong PowerShell tại thư mục gốc project. Cần cài Git LFS để tải ba checkpoint trong `weights/`. Tạo môi trường ảo một lần, ưu tiên Python 3.11.
+Chạy trong PowerShell tại thư mục gốc project. Dùng Git LFS để tải trọng số YOLO, MobileNet và CRNN. Checkpoint LPRNet v5 có sẵn tại `weights/lprnet_v5.pth`. Tạo môi trường ảo một lần, ưu tiên Python 3.11.
 
 ```powershell
 git lfs install
@@ -21,6 +21,18 @@ python scripts/realtime_lp_ocr.py --source 0
 # Video cục bộ, thay bằng đường dẫn video của bạn
 python scripts/realtime_lp_ocr.py --source "data/test/test2.mp4"
 ```
+
+## So sánh với CRNN
+
+```powershell
+# LPRNet v5 mặc định
+python scripts/realtime_lp_ocr.py --source "data/test/test2.mp4" --no-show --no-paced
+
+# CRNN đối chứng trên cùng video và cài đặt
+python scripts/realtime_lp_ocr.py --source "data/test/test2.mp4" --ocr-model crnn --no-show --no-paced
+```
+
+Dùng `--ocr-weights` để nạp checkpoint khác tương thích với backend đã chọn. LPRNet v5 và checkpoint đi kèm lấy từ nhánh `HoangAnh_Feature` tại commit `2bae356`. `summary.json` ghi backend đã chạy trong `ocr_backend`.
 
 Nhấn **Q** hoặc **Esc** để dừng. Dùng `--no-show --no-paced` để chạy benchmark. Dùng `--no-adaptive` để chỉ quét toàn cảnh mỗi frame rồi chạy ByteTrack và OCR. Mặc định tự chọn CPU hoặc GPU. Muốn dùng GPU NVIDIA, môi trường cần PyTorch và torchvision có hỗ trợ CUDA. Mỗi lượt chạy lưu video, log từng frame và thống kê ở `runs/plate_recognition/`. Video trong `data/` do bạn tự cung cấp.
 
@@ -45,7 +57,7 @@ flowchart TD
     N --> T["ByteTrack ghép bbox và quản lý ID"]
     T --> K["Nếu bật relink, thử nối lại track vừa hụt"]
     K --> O{"ID đến lịch, crop đạt chất lượng và được chọn vào batch?"}
-    O -->|Có| M["MobileNet phân loại số dòng → xử lý hàng → CRNN + CTC"]
+    O -->|Có| M["MobileNet phân loại số dòng → xử lý hàng → LPRNet v5 + CTC"]
     M --> V["Tổng hợp kết quả chữ theo ID"]
     O -->|Chưa| U["Dùng chữ đã lưu nếu có"]
     V --> D["Hiển thị và ghi log khi đồng thuận thay đổi"]

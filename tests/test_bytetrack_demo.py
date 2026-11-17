@@ -38,6 +38,8 @@ class DisplayTests(unittest.TestCase):
         self.assertEqual(args.conf, .2)
         self.assertEqual(args.imgsz, 640)
         self.assertTrue(args.adaptive and args.relink and args.show and args.paced)
+        self.assertEqual(args.ocr_model, "lprnet")
+        self.assertEqual(parse_args(["--ocr-model", "crnn"]).ocr_model, "crnn")
 
     def test_cli_can_disable_demo_defaults(self):
         args = parse_args(["--no-adaptive", "--no-show", "--no-paced"])

@@ -74,7 +74,9 @@ def parse_args(argv=None):
     parser.add_argument("--source", default="0", help="Video path or webcam index")
     parser.add_argument("--weights", type=Path, default=ROOT / "weights/best.pt")
     parser.add_argument("--layout-weights", type=Path, default=ROOT / "weights/layout_best.pt")
-    parser.add_argument("--ocr-weights", type=Path, default=ROOT / "weights/crnn_best.pt")
+    parser.add_argument("--ocr-model", choices=("lprnet", "crnn"), default="lprnet",
+                        help="OCR backend (default: lprnet; crnn for comparison)")
+    parser.add_argument("--ocr-weights", type=Path, help="Override the selected OCR model's checkpoint")
     parser.add_argument("--tracker", type=Path, default=ROOT / "configs/bytetrack.yaml")
     parser.add_argument("--device", default="auto")
     parser.add_argument("--imgsz", type=int, default=640)
@@ -161,7 +163,13 @@ def main(reader_factory=None):
 
     if not args.adaptive:
         detector.add_callback("on_predict_postprocess_end", capture_raw)
-    reader = (reader_factory or PlateReader)(args.ocr_weights, args.layout_weights, device)
+    ocr_weights = args.ocr_weights
+    if reader_factory is None and args.ocr_model == "lprnet":
+        from scripts.lprnet_reader import LPRReader
+        reader = LPRReader(ocr_weights or ROOT / "weights/lprnet_v5.pth", args.layout_weights, device)
+    else:
+        reader = (reader_factory or PlateReader)(ocr_weights or ROOT / "weights/crnn_best.pt",
+                                                args.layout_weights, device)
     ocr_name = getattr(reader, "name", "CRNN")
     detector_device = str(device.index) if device.type == "cuda" else "cpu"
     kwargs = dict(device=detector_device, imgsz=args.imgsz, conf=args.conf, iou=args.iou,
@@ -178,8 +186,9 @@ def main(reader_factory=None):
         detection_mode += "_gray"
     if args.search_roi:
         detection_mode += "_search"
+    output_mode = f"{detection_mode}_lprnet" if ocr_name == "LPRNet v5" else detection_mode
     name = Path(args.source).stem if not args.source.isdigit() else "webcam"
-    folder = args.output_dir / (name + "_" + detection_mode + "_" + mode + "_" + time.strftime("%Y%m%d_%H%M%S"))
+    folder = args.output_dir / (name + "_" + output_mode + "_" + mode + "_" + time.strftime("%Y%m%d_%H%M%S"))
     folder.mkdir(parents=True, exist_ok=False)
     source = int(args.source) if args.source.isdigit() else args.source
     capture = cv2.VideoCapture(source)
@@ -368,7 +377,7 @@ def main(reader_factory=None):
         peak_cuda_allocated_mb=torch.cuda.max_memory_allocated(device)/2**20 if device.type=="cuda" else None,
         reader_config=vars(reader.config),
         ocr_backend=ocr_name,
-        provenance=(reader.provenance if reader_factory else
+        provenance=(reader.provenance if hasattr(reader, "provenance") else
                     json.loads((ROOT / "weights/ocr_provenance.json").read_text(encoding="utf-8"))),
         notes=["No ground truth: repeated agreement and nonempty OCR are not accuracy.",
                "Every-frame mode uses ByteTrack too; it bypasses crop quality gates and batch cap.",

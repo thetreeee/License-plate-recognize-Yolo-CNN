@@ -192,25 +192,17 @@ class OCRReading:
         )}
 
 
-class PlateReader:
+class LayoutReader:
     classes = ("one_row", "two_rows")
 
-    def __init__(self, crnn_path, layout_path, device):
+    def __init__(self, layout_state, device):
         self.device = torch.device(device)
-        crnn_state, layout_state = load_checkpoint(crnn_path), load_checkpoint(layout_path)
-        self.config = OCRConfig.from_checkpoints(crnn_state, layout_state)
-        hidden = int(crnn_state["model"]["rnn.weight_hh_l0"].shape[1])
-        self.crnn = CRNN(len(self.config.charset)+1, hidden=hidden)
-        self.crnn.load_state_dict(crnn_state["model"], strict=True)
-        self.crnn.to(self.device).float().eval()
         self.layout_model = mobilenet_v3_small(weights=None)
         self.layout_model.classifier[-1] = nn.Linear(self.layout_model.classifier[-1].in_features,2)
         self.layout_model.load_state_dict(layout_state["model"], strict=True)
         self.layout_model.to(self.device).float().eval()
-        self.idx_to_char = {i+1:c for i,c in enumerate(self.config.charset)}
         self.mean = torch.tensor([.485,.456,.406])[:,None,None]
         self.std = torch.tensor([.229,.224,.225])[:,None,None]
-        self.epochs = {"crnn":crnn_state["epoch"], "layout":layout_state["epoch"]}
 
     def layout_tensor(self, crop):
         image = Image.fromarray(crop).convert("RGB")
@@ -223,6 +215,30 @@ class PlateReader:
         canvas.paste(image,((size-nw)//2,(size-nh)//2))
         tensor = torch.from_numpy(np.array(canvas)).permute(2,0,1).float()/255
         return (tensor-self.mean)/self.std
+
+    def classify_layouts(self, crops):
+        inputs = torch.stack([self.layout_tensor(crop) for crop in crops]).to(self.device)
+        logits = self.layout_model(inputs)
+        if not bool(torch.isfinite(logits).all()):
+            raise RuntimeError("MobileNet produced NaN/Inf")
+        scores, indices = logits.softmax(1).max(1)
+        return [OCRReading(layout=self.classes[index], layout_confidence=score)
+                for index, score in zip(indices.cpu().tolist(), scores.cpu().tolist())]
+
+
+class PlateReader(LayoutReader):
+    name = "CRNN"
+
+    def __init__(self, crnn_path, layout_path, device):
+        crnn_state, layout_state = load_checkpoint(crnn_path), load_checkpoint(layout_path)
+        self.config = OCRConfig.from_checkpoints(crnn_state, layout_state)
+        super().__init__(layout_state, device)
+        hidden = int(crnn_state["model"]["rnn.weight_hh_l0"].shape[1])
+        self.crnn = CRNN(len(self.config.charset)+1, hidden=hidden)
+        self.crnn.load_state_dict(crnn_state["model"], strict=True)
+        self.crnn.to(self.device).float().eval()
+        self.idx_to_char = {i+1:c for i,c in enumerate(self.config.charset)}
+        self.epochs = {"crnn":crnn_state["epoch"], "layout":layout_state["epoch"]}
 
     def ocr_tensor(self, crop, layout):
         if layout == "two_rows":
@@ -249,22 +265,14 @@ class PlateReader:
 
     @torch.inference_mode()
     def read_many(self, crops, debug=False):
-        readings = [OCRReading() for _ in crops]
         times = dict(layout_ms=0.,preprocess_ms=0.,crnn_decode_ms=0.)
         if not crops:
-            return readings,times
+            return [],times
         self.layout_model.eval()
         self.crnn.eval()
         synchronize(self.device)
         start = time.perf_counter()
-        inputs = torch.stack([self.layout_tensor(crop) for crop in crops]).to(self.device)
-        logits = self.layout_model(inputs)
-        if not bool(torch.isfinite(logits).all()):
-            raise RuntimeError("MobileNet produced NaN/Inf")
-        confidence,indices = logits.softmax(1).max(1)
-        for reading,index,score in zip(readings,indices.cpu().tolist(),confidence.cpu().tolist()):
-            reading.layout = self.classes[index]
-            reading.layout_confidence = float(score)
+        readings = self.classify_layouts(crops)
         synchronize(self.device)
         after_layout = time.perf_counter()
 
