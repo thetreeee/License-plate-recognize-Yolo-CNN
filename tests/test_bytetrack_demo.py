@@ -37,7 +37,12 @@ class DisplayTests(unittest.TestCase):
         args = parse_args([])
         self.assertEqual(args.conf, .2)
         self.assertEqual(args.imgsz, 640)
-        self.assertFalse(args.adaptive)
+        self.assertTrue(args.adaptive and args.relink and args.show and args.paced)
+
+    def test_cli_can_disable_demo_defaults(self):
+        args = parse_args(["--no-adaptive", "--no-show", "--no-paced"])
+        self.assertFalse(any((args.adaptive, args.relink, args.show, args.paced)))
+        self.assertFalse(parse_args(["--no-relink"]).relink)
 
 
 class ByteTrackIntegrationTests(unittest.TestCase):

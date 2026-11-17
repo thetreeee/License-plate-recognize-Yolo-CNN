@@ -78,8 +78,12 @@ def parse_args(argv=None):
     parser.add_argument("--tracker", type=Path, default=ROOT / "configs/bytetrack.yaml")
     parser.add_argument("--device", default="auto")
     parser.add_argument("--imgsz", type=int, default=640)
-    parser.add_argument("--adaptive", action="store_true", help="Scheduled high-resolution and ROI checks before ByteTrack")
-    parser.add_argument("--relink", action="store_true", help="Try a short-gap motion match before creating a new ID (requires --adaptive)")
+    parser.add_argument("--adaptive", action=argparse.BooleanOptionalAction, default=True,
+                        help="Scheduled high-resolution and ROI checks before ByteTrack (default: enabled)")
+    parser.add_argument("--grayscale", action=argparse.BooleanOptionalAction, default=True,
+                        help="Use grayscale replicated to three channels for YOLO (default: enabled)")
+    parser.add_argument("--relink", action=argparse.BooleanOptionalAction, default=None,
+                        help="Try a short-gap match before creating a new ID (default: enabled with adaptive)")
     parser.add_argument("--high-imgsz", type=int, default=1280)
     parser.add_argument("--high-interval", type=int, default=30)
     parser.add_argument("--roi-interval", type=int, default=5)
@@ -92,11 +96,15 @@ def parse_args(argv=None):
     parser.add_argument("--ocr-batch", type=int, default=4)
     parser.add_argument("--min-blur", type=float, default=20., help="Minimum grayscale Laplacian variance; heuristic")
     parser.add_argument("--ocr-every-frame", action="store_true", help="Baseline: read all visible tracks, bypass quality gates")
-    parser.add_argument("--show", action="store_true")
-    parser.add_argument("--paced", action="store_true", help="Limit playback to source FPS; default measures processing speed")
+    parser.add_argument("--show", action=argparse.BooleanOptionalAction, default=True,
+                        help="Show live output (default: enabled)")
+    parser.add_argument("--paced", action=argparse.BooleanOptionalAction, default=True,
+                        help="Limit playback to source FPS (default: enabled)")
     parser.add_argument("--max-frames", type=int, default=0)
     parser.add_argument("--output-dir", type=Path, default=ROOT / "runs/plate_recognition")
     args = parser.parse_args(argv)
+    if args.relink is None:
+        args.relink = args.adaptive
     if min(args.imgsz, args.ocr_interval, args.stable_interval, args.ocr_batch) < 1 or args.max_frames < 0:
         parser.error("Sizes/intervals/batch must be positive; max-frames must be >= 0")
     if not all(0 < value <= 1 for value in (args.conf, args.iou, args.ocr_conf)) or args.min_blur < 0:
@@ -116,6 +124,11 @@ def main(reader_factory=None):
     import torch
     from ultralytics import YOLO
     from scripts.lpr_models import PlateReader, crop_from_box, check_weight_file, synchronize
+
+    def yolo_input(image):
+        if args.grayscale:
+            return cv2.cvtColor(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), cv2.COLOR_GRAY2BGR)
+        return image
 
     torch.set_num_threads(4)
     cv2.setNumThreads(1)
@@ -154,6 +167,8 @@ def main(reader_factory=None):
                                     relink=args.relink)
     mode = "every_frame" if args.ocr_every_frame else "scheduled"
     detection_mode = "adaptive_relink" if args.relink else ("adaptive" if args.adaptive else "full_frame")
+    if args.grayscale:
+        detection_mode += "_gray"
     name = Path(args.source).stem if not args.source.isdigit() else "webcam"
     folder = args.output_dir / (name + "_" + detection_mode + "_" + mode + "_" + time.strftime("%Y%m%d_%H%M%S"))
     folder.mkdir(parents=True, exist_ok=False)
@@ -177,12 +192,13 @@ def main(reader_factory=None):
         if not ok:
             raise RuntimeError(f"Cannot read {args.source}")
         # Warm up all three networks even if the first source frame has no plate.
-        detector.predict(frame, **kwargs)
+        warm_frame = yolo_input(frame)
+        detector.predict(warm_frame, **kwargs)
         reader.read_many([np.full((64, 128, 3), 127, np.uint8)])
         if adaptive is not None:
-            adaptive.predict(frame, args.high_imgsz)
+            adaptive.predict(warm_frame, args.high_imgsz)
         else:
-            detector.track(frame, persist=True, tracker=str(args.tracker), **kwargs)
+            detector.track(warm_frame, persist=True, tracker=str(args.tracker), **kwargs)
             for tracker in detector.predictor.trackers:
                 tracker.reset()
         writer = cv2.VideoWriter(str(folder / "annotated.mp4"), cv2.VideoWriter_fourcc(*"mp4v"),
@@ -196,10 +212,11 @@ def main(reader_factory=None):
             synchronize(device)
             start = time.perf_counter()
             detection_info = None
+            detector_frame = yolo_input(frame)
             if adaptive is not None:
-                result, raw_detections, detection_info = adaptive.step(frame, frames)
+                result, raw_detections, detection_info = adaptive.step(detector_frame, frames)
             else:
-                result = detector.track(frame, persist=True, tracker=str(args.tracker), **kwargs)[0]
+                result = detector.track(detector_frame, persist=True, tracker=str(args.tracker), **kwargs)[0]
             tracks = observations(result)
             raw_frames += bool(raw_detections)
             raw_boxes += len(raw_detections)
