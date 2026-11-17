@@ -43,12 +43,13 @@ def merge_boxes(groups, shape, threshold):
 
 class AdaptiveDetector:
     def __init__(self, model, kwargs, tracker_config, high_imgsz=1280,
-                 high_interval=30, roi_interval=5, max_rois=2, relink=False):
+                 high_interval=30, roi_interval=5, max_rois=2, relink=False, search_rois=()):
         if min(high_interval, roi_interval, max_rois) < 1 or high_imgsz <= kwargs["imgsz"]:
             raise ValueError("Positive intervals/ROI budget and high-imgsz > imgsz are required")
         self.model, self.kwargs = model, dict(kwargs)
         self.high_imgsz, self.high_interval = high_imgsz, high_interval
         self.roi_interval, self.max_rois = roi_interval, max_rois
+        self.search_rois = search_rois
         tracker_type = BYTETracker
         if relink:
             from scripts.short_gap_tracker import ShortGapByteTracker
@@ -79,14 +80,14 @@ class AdaptiveDetector:
                (similarity >= .5) & (track.state == TrackState.Tracked))
         return (rows[:, 5] == track.cls) & (high | low)
 
-    def recover_tracks(self, frame, base, groups, info):
+    def recover_tracks(self, frame, base, groups, info, budget):
         tracker = self.tracker
         # shortcut: only bridge brief gaps of at most three frames; use camera motion compensation for longer jumps.
         recent = [copy(track) for track in (*tracker.tracked_stracks, *tracker.lost_stracks)
                   if track.is_activated and tracker.frame_id + 1 - track.end_frame <= 3]
         tracker.multi_predict(recent)
         for track in sorted(recent, key=lambda track: -track.end_frame):
-            if len(info["roi_regions"]) >= self.max_rois:
+            if len(info["roi_regions"]) >= budget:
                 break
             if self.matchable(track, base).any():
                 continue
@@ -123,7 +124,21 @@ class AdaptiveDetector:
             info["high_scan"] = True
             self.counts["high_calls"] += 1
         else:
-            self.recover_tracks(frame, base, groups, info)
+            # Two consecutive scans let ByteTrack confirm a new track.
+            search = self.search_rois and index % self.roi_interval < 2
+            self.recover_tracks(frame, base, groups, info, self.max_rois - int(bool(search)))
+            if search:
+                h, w = frame.shape[:2]
+                normalized = self.search_rois[(index // self.roi_interval) % len(self.search_rois)]
+                region = [round(value * size) for value, size in zip(normalized, (w, h, w, h))]
+                x1, y1, x2, y2 = region
+                if x2 > x1 and y2 > y1:
+                    rows = self.scan_region(frame, region)
+                    groups.append(rows[rows[:, 4] >= self.tracker.args.track_high_thresh])
+                    info["search_region"] = region
+                    info["roi_regions"].append(region)
+                    self.counts["search_calls"] += 1
+                    self.counts["roi_calls"] += 1
         if not info["high_scan"] and index % self.roi_interval == 0:
             scale = self.kwargs["imgsz"] / max(frame.shape[:2])
             small = np.minimum(base[:, 2]-base[:, 0], base[:, 3]-base[:, 1]) * scale < 32

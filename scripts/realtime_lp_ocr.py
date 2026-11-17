@@ -88,6 +88,9 @@ def parse_args(argv=None):
     parser.add_argument("--high-interval", type=int, default=30)
     parser.add_argument("--roi-interval", type=int, default=5)
     parser.add_argument("--max-rois", type=int, default=2)
+    parser.add_argument("--search-roi", action="append", nargs=4, type=float, default=[],
+                        metavar=("X1", "Y1", "X2", "Y2"),
+                        help="Scan a region for new plates in adaptive mode, using coordinates from 0 to 1; repeatable")
     parser.add_argument("--conf", type=float, default=0.2)
     parser.add_argument("--iou", type=float, default=.45)
     parser.add_argument("--ocr-conf", type=float, default=.6, help="Minimum YOLO score for an OCR crop")
@@ -114,6 +117,10 @@ def parse_args(argv=None):
         parser.error("Adaptive mode requires high-imgsz > imgsz and positive intervals/ROI budget")
     if args.relink and not args.adaptive:
         parser.error("--relink requires --adaptive")
+    if args.search_roi and (not args.adaptive or args.roi_interval < 2):
+        parser.error("--search-roi requires adaptive mode and --roi-interval >= 2")
+    if any(not (0 <= x1 < x2 <= 1 and 0 <= y1 < y2 <= 1) for x1, y1, x2, y2 in args.search_roi):
+        parser.error("--search-roi requires 0 <= X1 < X2 <= 1 and 0 <= Y1 < Y2 <= 1")
     return args
 
 
@@ -164,11 +171,13 @@ def main(reader_factory=None):
         from scripts.adaptive_detection import AdaptiveDetector
         adaptive = AdaptiveDetector(detector, kwargs, read_tracker_config(args.tracker),
                                     args.high_imgsz, args.high_interval, args.roi_interval, args.max_rois,
-                                    relink=args.relink)
+                                    relink=args.relink, search_rois=args.search_roi)
     mode = "every_frame" if args.ocr_every_frame else "scheduled"
     detection_mode = "adaptive_relink" if args.relink else ("adaptive" if args.adaptive else "full_frame")
     if args.grayscale:
         detection_mode += "_gray"
+    if args.search_roi:
+        detection_mode += "_search"
     name = Path(args.source).stem if not args.source.isdigit() else "webcam"
     folder = args.output_dir / (name + "_" + detection_mode + "_" + mode + "_" + time.strftime("%Y%m%d_%H%M%S"))
     folder.mkdir(parents=True, exist_ok=False)
@@ -337,7 +346,8 @@ def main(reader_factory=None):
         yolo_calls=sum(adaptive.counts[k] for k in ('base_calls','high_calls','roi_calls')) if adaptive else frames,
         detection_mode=detection_mode, adaptive_counts=dict(adaptive.counts) if adaptive else {},
         adaptive_config=dict(high_imgsz=args.high_imgsz, high_interval=args.high_interval,
-                             roi_interval=args.roi_interval, max_rois=args.max_rois) if adaptive else None,
+                             roi_interval=args.roi_interval, max_rois=args.max_rois,
+                             search_rois=args.search_roi) if adaptive else None,
         ocr_batches=ocr_batches,
         ocr_crops=ocr_crops, visible_track_observations=eligible_crops,
         skipped_ocr_percent=100*(1-ocr_crops/eligible_crops) if eligible_crops else None,

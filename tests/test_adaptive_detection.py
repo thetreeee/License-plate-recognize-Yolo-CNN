@@ -109,6 +109,18 @@ class AdaptiveTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.detector([], roi_interval=0)
 
+    def test_search_roi_confirms_new_track_without_full_frame_proposal(self):
+        box = [12, 15, 42, 33, .8, 0]
+        detector = self.detector([[], [box], [], [box]], max_rois=1,
+                                 search_rois=[(.5, .5, 1., 1.)])
+        frame = np.zeros((200, 300, 3), np.uint8)
+        for index in (5, 6):
+            result, raw, info = detector.step(frame, index)
+            self.assertEqual(info["roi_regions"], [[150, 100, 300, 200]])
+            np.testing.assert_allclose(raw[0]["xyxy"], [162, 115, 192, 133])
+        self.assertTrue(result.boxes.is_track)
+        self.assertEqual(detector.counts["search_calls"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

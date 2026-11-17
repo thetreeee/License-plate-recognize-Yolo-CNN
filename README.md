@@ -59,6 +59,12 @@ Chế độ adaptive mặc định ghép lại ID sau tối đa **3 frame bị h
 
 YOLO mặc định dùng ảnh xám ba kênh. Thêm `--no-grayscale` để đối chứng với đầu vào màu. OCR và video hiển thị dùng frame màu gốc.
 
+Nếu biết vùng thường có biển bị bỏ sót, dùng `--search-roi X1 Y1 X2 Y2` để ưu tiên quét vùng đó tìm biển mới. Tọa độ tính theo tỷ lệ từ 0 đến 1 của chiều rộng và chiều cao frame. Có thể lặp cờ để quét luân phiên nhiều vùng trong ngân sách ROI hiện tại.
+
+```powershell
+python scripts/realtime_lp_ocr.py --source "data/test/external_ddkhoa/Download.mp4" --search-roi .547 .483 .825 .674 --search-roi .738 .454 1 .645
+```
+
 ```powershell
 python scripts/realtime_lp_ocr.py --source "data/test/test6.mp4"
 ```
