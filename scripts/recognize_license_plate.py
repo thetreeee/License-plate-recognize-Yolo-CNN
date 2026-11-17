@@ -173,9 +173,19 @@ def annotate(frame,records,stats):
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--source",required=True,help="Image/video path, webcam index, or RTSP URL")
-    parser.add_argument("--det-weights",type=Path,default=PROJECT_ROOT/"weights/best.pt")
-    parser.add_argument("--layout-weights",type=Path,default=PROJECT_ROOT/"weights/layout_best.pt")
-    parser.add_argument("--ocr-weights",type=Path,default=PROJECT_ROOT/"weights/crnn_best.pt")
+    default_layout = (
+        PROJECT_ROOT / "weights/layout_best_v2.pt"
+        if (PROJECT_ROOT / "weights/layout_best_v2.pt").is_file()
+        else PROJECT_ROOT / "weights/layout_best.pt"
+    )
+    default_ocr = (
+        PROJECT_ROOT / "weights/crnn_best_v2.pt"
+        if (PROJECT_ROOT / "weights/crnn_best_v2.pt").is_file()
+        else PROJECT_ROOT / "weights/crnn_best.pt"
+    )
+    parser.add_argument("--det-weights", type=Path, default=PROJECT_ROOT / "weights/best.pt")
+    parser.add_argument("--layout-weights", type=Path, default=default_layout)
+    parser.add_argument("--ocr-weights", type=Path, default=default_ocr)
     parser.add_argument("--device",default="auto",help="auto, cpu, 0, or cuda:0")
     parser.add_argument("--imgsz",type=int,default=1280)
     parser.add_argument("--conf",type=float,default=.25,help="YOLO confidence threshold, not OCR confidence")
