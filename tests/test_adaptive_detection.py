@@ -67,6 +67,19 @@ class AdaptiveTests(unittest.TestCase):
         self.assertEqual(info["recovery_ids"], initial.boxes.id.int().tolist())
         self.assertEqual(detector.tracker.frame_id, 3)
 
+    def test_ocr_boxes_use_each_tracks_matched_detection(self):
+        left = [20, 30, 65, 56, .91, 0]
+        right = [130, 60, 178, 85, .87, 0]
+        left_weak = [24, 32, 67, 57, .35, 0]
+        right_strong = [132, 61, 179, 86, .9, 0]
+        detector = self.detector([[left, right], [], [left_weak, right_strong]])
+        frame = np.zeros((180, 260, 3), np.uint8)
+        initial, _, _ = detector.step(frame, 0)
+        left_id, right_id = initial.boxes.id.int().tolist()
+        _, _, info = detector.step(frame, 1)
+        self.assertEqual(info["matched_boxes"],
+                         {left_id: left_weak[:4], right_id: right_strong[:4]})
+
     def test_recovery_stops_after_three_frames_without_detection(self):
         box = [100, 100, 150, 120, .8, 0]
         detector = self.detector([[box], [box]] + [[]] * 7)

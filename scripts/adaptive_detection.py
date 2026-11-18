@@ -171,6 +171,20 @@ class AdaptiveDetector:
         merged = merge_boxes(groups, frame.shape, self.kwargs["iou"])
         raw = [dict(xyxy=row[:4].tolist(), confidence=float(row[4])) for row in merged]
         tracks = self.tracker.update(Boxes(merged, frame.shape[:2]), frame)
+        # ByteTrack indexes each confidence group independently.
+        info["matched_boxes"] = {}
+        if len(tracks):
+            cfg = self.tracker.args
+            high = merged[:, 4] >= cfg.track_high_thresh
+            high_rows = merged[high]
+            low_rows = merged[(merged[:, 4] > cfg.track_low_thresh) & ~high]
+            for *_, identity, score, cls, index in tracks:
+                rows = high_rows if score >= cfg.track_high_thresh else low_rows
+                index = int(index)
+                if 0 <= index < len(rows):
+                    row = rows[index]
+                    if row[4] == score and row[5] == cls:
+                        info["matched_boxes"][int(identity)] = row[:4].tolist()
         if relinks := getattr(self.tracker, "last_relinks", None):
             info["id_relinks"] = relinks
             self.counts["id_relinks"] += len(relinks)

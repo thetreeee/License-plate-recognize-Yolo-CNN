@@ -42,14 +42,14 @@ Số ID trên bbox và trong log `CONSENSUS` được cấp lần lượt từ 1
 
 ```mermaid
 flowchart TD
-    A["Frame gốc"] --> B["YOLO 640 toàn cảnh mỗi frame"]
+    A["Frame gốc"] --> B["YOLO 960 toàn cảnh mỗi frame"]
     B --> G["Gộp box trong tọa độ ảnh gốc"]
     B --> H{"Đến lịch quét 1280?"}
     H -->|Có| Y["YOLO 1280 toàn cảnh"]
     H -->|Chưa| F["Ưu tiên tìm lại track vừa mất bbox quanh vị trí dự đoán"]
     F --> G
     F --> R{"Còn lượt quét và đến lịch ROI cho box nhỏ hoặc yếu?"}
-    R -->|Có| C["Crop rộng từ ảnh gốc, chạy YOLO 640 và kiểm tra box"]
+    R -->|Có| C["Crop rộng từ ảnh gốc, chạy YOLO 960 và kiểm tra box"]
     R -->|Chưa| G
     Y --> G
     C --> G

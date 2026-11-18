@@ -36,7 +36,8 @@ class DisplayTests(unittest.TestCase):
     def test_cli_defaults_preserve_low_score_candidates(self):
         args = parse_args([])
         self.assertEqual(args.conf, .2)
-        self.assertEqual(args.imgsz, 640)
+        self.assertEqual(args.imgsz, 960)
+        self.assertEqual((args.high_imgsz, args.high_interval), (1280, 30))
         self.assertTrue(args.adaptive and args.relink and args.show and args.paced)
         self.assertEqual(args.ocr_model, "lprnet")
         self.assertEqual(parse_args(["--ocr-model", "crnn"]).ocr_model, "crnn")

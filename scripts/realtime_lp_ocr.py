@@ -8,6 +8,7 @@ import time
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
+OCR_CROP_WIDTH_RATIO = 1.5
 sys.path.insert(0, str(ROOT))
 
 from scripts.temporal_ocr import TemporalOCR
@@ -79,7 +80,7 @@ def parse_args(argv=None):
     parser.add_argument("--ocr-weights", type=Path, help="Override the selected OCR model's checkpoint")
     parser.add_argument("--tracker", type=Path, default=ROOT / "configs/bytetrack.yaml")
     parser.add_argument("--device", default="auto")
-    parser.add_argument("--imgsz", type=int, default=640)
+    parser.add_argument("--imgsz", type=int, default=960)
     parser.add_argument("--adaptive", action=argparse.BooleanOptionalAction, default=True,
                         help="Scheduled high-resolution and ROI checks before ByteTrack (default: enabled)")
     parser.add_argument("--grayscale", action=argparse.BooleanOptionalAction, default=True,
@@ -250,12 +251,18 @@ def main(reader_factory=None):
             candidates = []
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) if tracks else None
             h, w = frame.shape[:2]
+            matched_boxes = detection_info.pop("matched_boxes") if detection_info is not None else {}
             for track in tracks:
                 identity = track["id"]
                 track["display_id"] = display_ids.setdefault(identity, len(display_ids) + 1)
                 if not scheduler.due(identity, frames, args.ocr_every_frame):
                     continue
                 x1, y1, x2, y2 = track["xyxy"]
+                detection_box = matched_boxes.get(identity)
+                # Use the fresh crop when tracking has added substantial background.
+                if detection_box is not None and x2 - x1 >= OCR_CROP_WIDTH_RATIO * (
+                        detection_box[2] - detection_box[0]):
+                    x1, y1, x2, y2 = detection_box
                 box = (int(np.clip(np.floor(x1), 0, w)), int(np.clip(np.floor(y1), 0, h)),
                        int(np.clip(np.ceil(x2), 0, w)), int(np.clip(np.ceil(y2), 0, h)))
                 try:
@@ -372,6 +379,7 @@ def main(reader_factory=None):
         ocr_batch_p95_ms=p95(ocr_times), ocr_stage_total_ms=dict(stages),
         device=str(device), precision="FP32", imgsz=args.imgsz, conf=args.conf,
         ocr_conf=args.ocr_conf, ocr_interval=args.ocr_interval, stable_interval=args.stable_interval,
+        ocr_crop_width_ratio=OCR_CROP_WIDTH_RATIO if adaptive else None,
         min_blur=args.min_blur, ocr_batch=args.ocr_batch, iou=args.iou, source_fps=source_fps, paced=args.paced,
         tracker_config=read_tracker_config(args.tracker),
         peak_cuda_allocated_mb=torch.cuda.max_memory_allocated(device)/2**20 if device.type=="cuda" else None,
