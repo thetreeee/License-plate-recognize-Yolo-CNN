@@ -7,7 +7,8 @@ from pathlib import Path
 import shutil
 import subprocess
 from tempfile import TemporaryDirectory
-from time import monotonic
+from threading import Event
+from time import monotonic, sleep
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -16,6 +17,7 @@ from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconn
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import numpy as np
+from pydantic import BaseModel, StrictBool
 from PIL import Image, JpegImagePlugin
 from starlette.concurrency import run_in_threadpool
 
@@ -39,6 +41,7 @@ class Job:
     error: str = ""
     finished: float | None = None
     preview: tuple[int, bytes] | None = None
+    paused: Event = field(default_factory=Event)
 
 
 def prune(app):
@@ -68,6 +71,8 @@ async def lifespan(app):
         finally:
             cleaner.cancel()
             await asyncio.gather(cleaner, return_exceptions=True)
+            for job in app.state.jobs.values():
+                job.paused.clear()
             if app.state.task is not None:
                 await app.state.task
 
@@ -117,6 +122,8 @@ def process_video(models, job):
         session = Session(models, uploaded_video=True, source_fps=fps)
         last_preview = -float('inf')
         while ok:
+            while job.paused.is_set():
+                sleep(.05)
             if job.frames >= MAX_FRAMES or frame.shape[:2] != (height, width):
                 raise ValueError("Video vượt giới hạn khung hình hoặc thay đổi kích thước giữa chừng.")
             frame, events = session.step(frame, job.frames / fps)
@@ -157,6 +164,7 @@ async def finish_job(job):
         job.error = "Xử lý video thất bại."
         job.status = "failed"
     finally:
+        job.paused.clear()
         for name in ("source", "annotated.mp4"):
             (job.path / name).unlink(missing_ok=True)
         job.finished = monotonic()
@@ -210,7 +218,25 @@ def get_job(key):
 def status(key: str):
     job = get_job(key)
     return dict(status=job.status, frames=job.frames, total=job.total,
-                plates=list(job.plates.copy().values()), error=job.error)
+                plates=list(job.plates.copy().values()), error=job.error,
+                paused=job.paused.is_set())
+
+
+class Playback(BaseModel):
+    paused: StrictBool
+
+
+@app.patch("/api/videos/{key}/playback")
+async def playback(key: str, body: Playback, request: Request):
+    if not same_origin(request):
+        raise HTTPException(403)
+    job = get_job(key)
+    if job.status == "processing":
+        if body.paused:
+            job.paused.set()
+        else:
+            job.paused.clear()
+    return {"paused": job.paused.is_set() and job.status == "processing"}
 
 
 @app.get("/api/videos/{key}/preview")

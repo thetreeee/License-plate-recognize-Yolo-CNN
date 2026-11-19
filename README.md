@@ -58,10 +58,11 @@ Kết quả cần có tên GPU NVIDIA và `cuda:0`.
 
 **Video tải lên**
 
-1. Chọn video và bấm **Chạy nhận diện**.
+1. Chọn video. Web tự tải lên và bắt đầu nhận diện.
 2. Backend đọc file tuần tự, chạy pipeline và gửi khung hình dự đoán về trình duyệt qua MJPEG.
 3. Danh sách biển số cập nhật khi một track đạt `CONSENSUS`. Mỗi mục có ảnh crop, ID và thời điểm.
-4. Khi xử lý xong, giao diện phát MP4 H.264. Bấm **Tua đến vị trí** ở một biển số để xem thời điểm ghi nhận.
+4. Bấm vào giữa video để tạm dừng hoặc tiếp tục. Khi đang nhận diện, thao tác này cũng tạm dừng xử lý frame.
+5. Khi xử lý xong, giao diện phát MP4 H.264. Bấm **Tua đến vị trí** ở một biển số để dừng đúng khung ghi nhận và làm nổi bật bbox của biển đó bằng viền đỏ. Viền đỏ hiển thị tại khung đã chọn, ẩn khi phát tiếp hoặc tua sang vị trí khác.
 
 MP4 kết quả chứa phần hình đã vẽ bbox. Tiến độ có thể tiếp tục ở giai đoạn xuất MP4 sau khi đã đọc hết frame.
 

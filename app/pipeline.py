@@ -41,6 +41,7 @@ class Models:
 class Session:
     def __init__(self, models, *, uploaded_video=False, source_fps=30):
         self.models = models
+        self.source_fps = source_fps
         args = models.args
         options = models.options
         if uploaded_video and models.device.type == "cuda":
@@ -59,6 +60,7 @@ class Session:
         gray = cv2.cvtColor(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), cv2.COLOR_GRAY2BGR)
         result, _, detection_info = self.detector.step(gray, self.frame)
         tracks = observations(result)
+        boxes_by_id = {track["id"]: track["xyxy"] for track in tracks}
         self.scheduler.observe([track["id"] for track in tracks], self.frame)
         self.crops = {key: value for key, value in self.crops.items() if key in self.scheduler.states}
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) if tracks else None
@@ -110,7 +112,11 @@ class Session:
                     _, _, best = max((sample for sample in samples if sample[0] == state.text),
                                      key=lambda sample: sample[1])
                     events.append(dict(id=self.display_ids[identity], plate=state.text,
-                                       status="CONSENSUS", seconds=round(seconds, 2),
+                                       status="CONSENSUS", seconds=seconds,
+                                       seek_seconds=seconds + .5 / self.source_fps,
+                                       bbox=[float(value) / size for value, size in zip(
+                                           boxes_by_id[identity],
+                                           (width + width % 2, height + height % 2) * 2)],
                                        crop=jpeg(cv2.cvtColor(best, cv2.COLOR_RGB2BGR))))
 
         for track in tracks:

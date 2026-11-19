@@ -1,13 +1,83 @@
 const byId = id => document.getElementById(id);
-const form = byId("upload"), file = byId("file"), submit = byId("submit");
+const form = byId("upload"), file = byId("file");
 const camera = byId("camera"), result = byId("result"), live = byId("live");
 const empty = byId("empty"), list = byId("plates"), noPlates = byId("no-plates");
 const status = message => { byId("status").textContent = message; };
 const imageUrl = data => "data:image/jpeg;base64," + data;
 const cards = new Map();
 let cameraSession = null;
+const previewCanvas = byId("preview-canvas"), playback = byId("playback");
+const highlight = byId("highlight"), screen = previewCanvas.parentElement;
+let uploadEndpoint = null, viewPaused = false, previewAnimation = null, selectedPlate = null;
+
+function updatePlayback() {
+  const paused = result.hidden ? viewPaused : result.paused;
+  playback.classList.toggle("paused", paused);
+  playback.classList.toggle("completed", !result.hidden);
+  playback.setAttribute("aria-label", paused ? "Tiếp tục video" : "Tạm dừng video");
+  byId("playback-label").textContent = paused ? "Tiếp tục" : "Tạm dừng";
+}
+
+function drawPreview() {
+  if (!viewPaused && live.naturalWidth && !previewCanvas.hidden) {
+    if (previewCanvas.width !== live.naturalWidth || previewCanvas.height !== live.naturalHeight) {
+      previewCanvas.width = live.naturalWidth;
+      previewCanvas.height = live.naturalHeight;
+    }
+    previewCanvas.getContext("2d").drawImage(live, 0, 0);
+    playback.hidden = false;
+  }
+  previewAnimation = requestAnimationFrame(drawPreview);
+}
+
+function drawHighlight() {
+  highlight.hidden = true;
+  if (!selectedPlate || result.hidden || !result.paused || !result.videoWidth ||
+      Math.abs(result.currentTime - selectedPlate.seek_seconds) > .02) return;
+  const bounds = screen.getBoundingClientRect();
+  const scale = Math.min(bounds.width / result.videoWidth, bounds.height / result.videoHeight);
+  const width = result.videoWidth * scale, height = result.videoHeight * scale;
+  const [x1, y1, x2, y2] = selectedPlate.bbox;
+  highlight.style.left = `${(bounds.width - width) / 2 + x1 * width}px`;
+  highlight.style.top = `${(bounds.height - height) / 2 + y1 * height}px`;
+  highlight.style.width = `${(x2 - x1) * width}px`;
+  highlight.style.height = `${(y2 - y1) * height}px`;
+  highlight.hidden = false;
+}
+
+playback.onclick = async () => {
+  if (!result.hidden) {
+    if (result.paused) {
+      try { await result.play(); } catch (error) { status(error.message); }
+    } else result.pause();
+    return;
+  }
+  if (!uploadEndpoint) return;
+  playback.disabled = true;
+  try {
+    const paused = !viewPaused;
+    await json(await fetch(uploadEndpoint + "/playback", {
+      method: "PATCH", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({paused}),
+    }));
+    viewPaused = paused;
+    updatePlayback();
+  } catch (error) { status(error.message); }
+  finally { playback.disabled = false; }
+};
+
+for (const event of ["loadedmetadata", "seeked", "timeupdate", "play", "pause", "ended"]) {
+  result.addEventListener(event, () => { updatePlayback(); drawHighlight(); });
+}
+new ResizeObserver(drawHighlight).observe(screen);
 
 function reset() {
+  cancelAnimationFrame(previewAnimation);
+  previewAnimation = null;
+  uploadEndpoint = selectedPlate = null;
+  viewPaused = false;
+  previewCanvas.hidden = playback.hidden = highlight.hidden = true;
+  result.pause();
   cards.clear();
   list.replaceChildren();
   noPlates.hidden = false;
@@ -36,7 +106,13 @@ function showPlates(plates, seekable) {
       const button = document.createElement("button");
       button.className = "seek";
       button.textContent = "Tua đến vị trí";
-      button.onclick = () => { result.currentTime = plate.seconds; };
+      button.onclick = () => {
+        result.pause();
+        selectedPlate = plate.bbox ? {...plate, seek_seconds: plate.seek_seconds ?? plate.seconds} : null;
+        for (const [id, card] of cards) card.row.classList.toggle("selected", id === plate.id);
+        result.currentTime = plate.seek_seconds ?? plate.seconds;
+        drawHighlight();
+      };
       info.append(button);
     }
     row.append(image, info);
@@ -53,8 +129,8 @@ async function json(response) {
   return data;
 }
 
-form.onsubmit = async event => {
-  event.preventDefault();
+form.onsubmit = event => event.preventDefault();
+file.onchange = async () => {
   const video = file.files[0];
   if (!video || cameraSession) return;
   if (video.size > 100 * 1024 ** 2) {
@@ -62,39 +138,48 @@ form.onsubmit = async event => {
     return;
   }
   reset();
-  submit.disabled = camera.disabled = file.disabled = true;
+  camera.disabled = file.disabled = true;
   status("Đang tải video lên…");
   try {
     const job = await json(await fetch("/api/videos", {
       method: "POST", body: video, headers: {"Content-Type": "application/octet-stream"},
     }));
     const endpoint = "/api/videos/" + job.id;
+    uploadEndpoint = endpoint;
     live.src = endpoint + "/preview";
-    live.hidden = false;
+    previewCanvas.hidden = false;
+    updatePlayback();
+    drawPreview();
     empty.hidden = true;
     for (;;) {
       const data = await json(await fetch(endpoint, {cache: "no-store"}));
       if (data.status === "failed") throw new Error(data.error);
       const ready = data.status === "ready";
-      showPlates(data.plates, ready);
-      if (ready) {
+      showPlates(data.plates, ready && !viewPaused);
+      if (ready && !viewPaused) {
         result.src = endpoint + "/result";
         result.hidden = false;
+        updatePlayback();
         empty.hidden = true;
         status(`Đã xử lý ${data.frames} khung hình.`);
         break;
       }
       const total = data.total ? ` / ${data.total}` : "";
-      status(`Đang xử lý video · ${data.frames}${total} khung hình`);
+      status(`${viewPaused ? "Đã tạm dừng" : "Đang xử lý video"} · ${data.frames}${total} khung hình`);
       await new Promise(resolve => setTimeout(resolve, 800));
     }
   } catch (error) {
     status(error.message);
   } finally {
+    cancelAnimationFrame(previewAnimation);
+    previewCanvas.hidden = true;
     live.hidden = true;
     live.removeAttribute("src");
     empty.hidden = !result.hidden;
-    submit.disabled = camera.disabled = file.disabled = false;
+    uploadEndpoint = null;
+    playback.hidden = result.hidden;
+    camera.disabled = file.disabled = false;
+    file.value = "";
   }
 };
 
@@ -106,7 +191,7 @@ function stopCamera(message) {
   session.socket?.close();
   session.video.srcObject = null;
   camera.textContent = "Mở camera";
-  submit.disabled = file.disabled = false;
+  file.disabled = false;
   if (message) status(message);
 }
 
@@ -123,7 +208,7 @@ camera.onclick = async () => {
   const session = {video: document.createElement("video")};
   cameraSession = session;
   camera.textContent = "Dừng camera";
-  submit.disabled = file.disabled = true;
+  file.disabled = true;
   status("Đang xin quyền camera…");
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -183,4 +268,12 @@ camera.onclick = async () => {
   }
 };
 
-window.addEventListener("pagehide", () => stopCamera());
+window.addEventListener("pagehide", () => {
+  stopCamera();
+  if (uploadEndpoint && viewPaused) {
+    fetch(uploadEndpoint + "/playback", {
+      method: "PATCH", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({paused: false}), keepalive: true,
+    }).catch(() => {});
+  }
+});

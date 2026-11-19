@@ -11,7 +11,6 @@
     <form id="upload">
       <label for="file">Video tải lên</label>
       <input id="file" type="file" accept="video/*" required>
-      <button id="submit">Chạy nhận diện</button>
     </form>
     <button id="camera" type="button">Mở camera</button>
     <p id="status" role="status">Chọn video hoặc mở camera để bắt đầu.</p>
@@ -23,6 +22,11 @@
         <span id="empty">Khung hình sẽ xuất hiện tại đây</span>
         <video id="result" controls playsinline hidden></video>
         <img id="live" alt="Khung hình video đã nhận diện" hidden>
+        <canvas id="preview-canvas" aria-label="Video đang nhận diện" hidden></canvas>
+        <div id="highlight" hidden></div>
+        <button id="playback" type="button" aria-label="Tạm dừng video" hidden>
+          <span id="playback-label">Tạm dừng</span>
+        </button>
       </div>
     </section>
     <aside class="panel">
