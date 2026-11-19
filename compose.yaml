@@ -1,0 +1,18 @@
+services:
+  web:
+    build: .
+    image: plate-web:cuda
+    gpus: all
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      PLATE_DEVICE: cuda:0
+      YOLO_AUTOINSTALL: "false"
+      OPENCV_FFMPEG_CAPTURE_OPTIONS: "protocol_whitelist;file|format_whitelist;mov,matroska,avi,mpegts,mpeg,flv"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 15s
+      timeout: 4s
+      start_period: 30s
+    volumes:
+      - ./weights:/app/weights:ro

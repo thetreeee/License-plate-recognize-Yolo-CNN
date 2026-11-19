@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="vi">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nhận diện biển số</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/app.js" defer></script>
+<main>
+  <header><h1>Nhận diện biển số</h1></header>
+  <section class="controls" aria-label="Nguồn video">
+    <form id="upload">
+      <label for="file">Video tải lên</label>
+      <input id="file" type="file" accept="video/*" required>
+      <button id="submit">Chạy nhận diện</button>
+    </form>
+    <button id="camera" type="button">Mở camera</button>
+    <p id="status" role="status">Chọn video hoặc mở camera để bắt đầu.</p>
+  </section>
+  <div class="workspace">
+    <section class="panel">
+      <h2>Video dự đoán</h2>
+      <div class="screen">
+        <span id="empty">Khung hình sẽ xuất hiện tại đây</span>
+        <video id="result" controls playsinline hidden></video>
+        <img id="live" alt="Khung hình video đã nhận diện" hidden>
+      </div>
+    </section>
+    <aside class="panel">
+      <h2>Biển số đã đồng thuận</h2>
+      <ul id="plates"></ul>
+      <p id="no-plates">Chưa ghi nhận biển số.</p>
+    </aside>
+  </div>
+</main>
+</html>

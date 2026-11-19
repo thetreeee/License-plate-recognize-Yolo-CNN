@@ -1,0 +1,27 @@
+:root { color-scheme: dark; font-family: "Segoe UI", sans-serif; color: #edf5f2; background: #101817; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { margin: auto; width: min(1220px, 94vw); padding: 2.5rem 0; }
+h1 { font-size: clamp(2rem, 4vw, 3.25rem); margin: 0 0 1.45rem; letter-spacing: -.045em; }
+h2 { font-size: 1.02rem; margin: 0 0 1rem; }
+.controls, .panel { background: #17211f; border: 1px solid #31413b; border-radius: 12px; padding: 1rem; }
+.controls { display: flex; flex-wrap: wrap; align-items: end; gap: .8rem; margin-bottom: 1rem; }
+form { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; }
+input { max-width: 100%; }
+button { font: inherit; font-weight: 650; padding: .55rem .8rem; border-radius: 7px; border: 1px solid transparent; color: #10201a; background: #9be4c3; cursor: pointer; }
+#camera, .seek { background: #202e29; color: #e4f5ed; border-color: #43584f; }
+button:disabled { opacity: .5; cursor: default; }
+button:focus-visible, input:focus-visible { outline: 2px solid #9be4c3; outline-offset: 3px; }
+#status { flex-basis: 100%; margin: 0; color: #bdd0c7; min-height: 1.4rem; }
+.workspace { display: grid; grid-template-columns: minmax(0, 2.1fr) minmax(235px, 1fr); gap: 1rem; align-items: start; }
+.screen { background: #0a100e; min-height: 12rem; aspect-ratio: 16 / 9; display: grid; place-items: center; border-radius: 8px; overflow: hidden; }
+#empty, #no-plates { color: #aebfb7; }
+.screen video, .screen img { width: 100%; height: 100%; max-height: 68vh; object-fit: contain; }
+#plates { list-style: none; padding: 0; margin: 0; display: grid; gap: .65rem; max-height: 65vh; overflow: auto; }
+#plates li { display: grid; grid-template-columns: 80px 1fr; gap: .7rem; align-items: center; padding: .65rem; background: #101817; border-radius: 8px; overflow-wrap: anywhere; }
+#plates img { width: 80px; height: 58px; object-fit: contain; }
+#plates strong, #plates small { display: block; }
+#plates small { color: #9be4c3; margin: .2rem 0; }
+.seek { margin-top: .25rem; font-size: .8rem; }
+[hidden] { display: none !important; }
+@media (max-width: 720px) { .workspace { grid-template-columns: 1fr; } }

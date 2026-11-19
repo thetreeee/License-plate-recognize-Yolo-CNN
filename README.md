@@ -1,84 +1,194 @@
-# Nhận diện biển số — YOLOv8n, ByteTrack và LPRNet v5
+# Web nhận diện biển số bằng Docker CUDA
 
-Chạy `scripts/realtime_lp_ocr.py` để phát hiện, theo dõi và đọc biển số. MobileNet phân loại biển một hoặc hai dòng, sau đó LPRNet v5 đọc ký tự. Chế độ mặc định bật quét bổ sung, nối lại ID, cửa sổ hiển thị và phát theo FPS nguồn.
+Nhánh `PhungVu_dockerDeloy` cung cấp web tải video và camera laptop, chạy YOLO, ByteTrack, MobileNet và LPRNet v5 trên GPU NVIDIA. Trình duyệt hiển thị video dự đoán trong lúc xử lý và các biển số từng đạt `CONSENSUS` kèm ảnh crop.
 
-## Cách chạy
+## Chuẩn bị máy
 
-Chạy trong PowerShell tại thư mục gốc project. Dùng Git LFS để tải trọng số YOLO, MobileNet và CRNN. Checkpoint LPRNet v5 có sẵn tại `weights/lprnet_v5.pth`. Tạo môi trường ảo một lần, ưu tiên Python 3.11.
+- GPU NVIDIA và driver hoạt động. Kiểm tra bằng `nvidia-smi`.
+- Git và Git LFS để lấy đủ checkpoint.
+- Docker và Docker Compose hỗ trợ `gpus: all`.
+- Trên Windows, dùng Docker Desktop với Linux containers và backend WSL 2. Bật **Use the WSL 2 based engine** trong Settings → General.
+- Trên Linux, cấu hình NVIDIA Container Toolkit để Docker truy cập GPU.
+- Có Internet và dung lượng trống cho lần build đầu. Image CUDA trong lần triển khai trước chiếm khoảng 10 GB.
+
+Image cài Python 3.11, PyTorch 2.6.0, torchvision 0.21.0 và CUDA runtime 12.4. Dockerfile cài các thư viện Python và FFmpeg trong image. Máy chủ cung cấp driver NVIDIA.
+
+Điều kiện GPU trên Windows được mô tả trong [tài liệu Docker Desktop](https://docs.docker.com/desktop/features/gpu/). Cặp phiên bản PyTorch và torchvision dùng theo [hướng dẫn PyTorch](https://docs.pytorch.org/get-started/previous-versions/).
+
+## Cài đặt lần đầu
+
+Các lệnh dưới đây chạy từ PowerShell hoặc terminal.
 
 ```powershell
 git lfs install
+git clone --branch PhungVu_dockerDeloy --single-branch https://github.com/thetreeee/License-plate-recognize-Yolo-CNN.git
+cd License-plate-recognize-Yolo-CNN
 git lfs pull
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
 ```
+
+Ứng dụng cần ba file trọng số ở gốc repo.
+
+| File | Vai trò |
+|---|---|
+| `weights/best.pt` | YOLO phát hiện biển số |
+| `weights/layout_best.pt` | MobileNet phân loại số dòng |
+| `weights/lprnet_v5.pth` | LPRNet đọc ký tự |
+
+Nếu log báo `Git LFS pointer`, chạy lại `git lfs pull` trong repo.
+
+Build và chạy từ thư mục chứa `compose.yaml`.
 
 ```powershell
-# Webcam mặc định, đổi 0 thành 1 nếu dùng camera thứ hai
-python scripts/realtime_lp_ocr.py --source 0
-
-# Video cục bộ, thay bằng đường dẫn video của bạn
-python scripts/realtime_lp_ocr.py --source "data/test/test2.mp4"
+docker compose config --quiet
+docker compose up --build -d --wait --wait-timeout 120
+docker compose ps
 ```
 
-## So sánh với CRNN
+Mở [http://localhost:8000](http://localhost:8000). Khi container chuyển sang `healthy`, backend đã nạp model và hoàn tất lượt suy luận khởi động.
+
+Kiểm tra GPU bên trong container bằng phép tính CUDA.
 
 ```powershell
-# LPRNet v5 mặc định
-python scripts/realtime_lp_ocr.py --source "data/test/test2.mp4" --no-show --no-paced
-
-# CRNN đối chứng trên cùng video và cài đặt
-python scripts/realtime_lp_ocr.py --source "data/test/test2.mp4" --ocr-model crnn --no-show --no-paced
+docker compose exec web python -c "import torch; assert torch.cuda.is_available(); x=torch.ones(1,device='cuda:0'); torch.cuda.synchronize(); print(torch.version.cuda, torch.cuda.get_device_name(0), x.device)"
 ```
 
-Dùng `--ocr-weights` để nạp checkpoint khác tương thích với backend đã chọn. LPRNet v5 và checkpoint đi kèm lấy từ nhánh `HoangAnh_Feature` tại commit `2bae356`. `summary.json` ghi backend đã chạy trong `ocr_backend`.
+Kết quả cần có tên GPU NVIDIA và `cuda:0`.
 
-Nhấn **Q** hoặc **Esc** để dừng. Dùng `--no-show --no-paced` để chạy benchmark. Dùng `--no-adaptive` để chỉ quét toàn cảnh mỗi frame rồi chạy ByteTrack và OCR. Mặc định tự chọn CPU hoặc GPU. Muốn dùng GPU NVIDIA, môi trường cần PyTorch và torchvision có hỗ trợ CUDA. Mỗi lượt chạy lưu video, log từng frame và thống kê ở `runs/plate_recognition/`. Video trong `data/` do bạn tự cung cấp.
+## Sử dụng
 
-Số ID trên bbox và trong log `CONSENSUS` được cấp lần lượt từ 1 khi mỗi track xuất hiện lần đầu. Số đó được giữ nếu cùng track xuất hiện lại. Trong `frames.jsonl`, `tracks[].display_id` là số hiển thị và `tracks[].id` là ID ByteTrack dùng để đối chiếu `readings.json` và các lần `id_relinks`.
+**Video tải lên**
 
-## Pipeline adaptive
+1. Chọn video và bấm **Chạy nhận diện**.
+2. Backend đọc file tuần tự, chạy pipeline và gửi khung hình dự đoán về trình duyệt qua MJPEG.
+3. Danh sách biển số cập nhật khi một track đạt `CONSENSUS`. Mỗi mục có ảnh crop, ID và thời điểm.
+4. Khi xử lý xong, giao diện phát MP4 H.264. Bấm **Tua đến vị trí** ở một biển số để xem thời điểm ghi nhận.
 
-```mermaid
-flowchart TD
-    A["Frame gốc"] --> B["YOLO 960 toàn cảnh mỗi frame"]
-    B --> G["Gộp box trong tọa độ ảnh gốc"]
-    B --> H{"Đến lịch quét 1280?"}
-    H -->|Có| Y["YOLO 1280 toàn cảnh"]
-    H -->|Chưa| F["Ưu tiên tìm lại track vừa mất bbox quanh vị trí dự đoán"]
-    F --> G
-    F --> R{"Còn lượt quét và đến lịch ROI cho box nhỏ hoặc yếu?"}
-    R -->|Có| C["Crop rộng từ ảnh gốc, chạy YOLO 960 và kiểm tra box"]
-    R -->|Chưa| G
-    Y --> G
-    C --> G
-    G --> N["Loại box trùng bằng NMS"]
-    N --> T["ByteTrack ghép bbox và quản lý ID"]
-    T --> K["Nếu bật relink, thử nối lại track vừa hụt"]
-    K --> O{"ID đến lịch, crop đạt chất lượng và được chọn vào batch?"}
-    O -->|Có| M["MobileNet phân loại số dòng → xử lý hàng → LPRNet v5 + CTC"]
-    M --> V["Tổng hợp kết quả chữ theo ID"]
-    O -->|Chưa| U["Dùng chữ đã lưu nếu có"]
-    V --> D["Hiển thị và ghi log khi đồng thuận thay đổi"]
-    U --> D
-    D -->|Frame tiếp theo| A
+MP4 kết quả chứa phần hình đã vẽ bbox. Tiến độ có thể tiếp tục ở giai đoạn xuất MP4 sau khi đã đọc hết frame.
+
+**Camera laptop**
+
+1. Bấm **Mở camera** và cấp quyền camera trong trình duyệt.
+2. Trình duyệt lấy hình từ camera trên máy người dùng, gửi JPEG qua WebSocket và hiển thị kết quả trả về.
+3. Bấm **Dừng camera** để kết thúc.
+
+Camera trong trình duyệt cần `localhost` hoặc HTTPS. Nếu truy cập từ máy khác, cấu hình HTTPS và proxy hỗ trợ WebSocket.
+
+**Giới hạn đang áp dụng**
+
+- Một lượt suy luận đang hoạt động tại một thời điểm.
+- Video tải lên tối đa 100 MiB, 18.000 frame và 2.073.600 pixel mỗi frame, tương đương 1920 × 1080.
+- Video hỗ trợ MP4, MOV, MKV, WebM, AVI, MPEG và FLV tùy codec giải mã.
+- Kết quả được lưu tạm khoảng một giờ sau khi xử lý xong. Khởi động lại ứng dụng sẽ xóa các kết quả tạm.
+- Phiên camera tối đa một giờ. Nếu ngừng gửi hình 30 giây, máy chủ đóng kết nối.
+
+## Pipeline và cấu trúc code
+
+```text
+Video → FastAPI → OpenCV đọc frame
+                      ↓
+YOLO → ByteTrack → crop chất lượng tốt nhất → MobileNet → LPRNet
+                      ↓
+               TemporalOCR consensus
+                      ↓
+       Vẽ bbox → xem trước MJPEG + crop
+                      ↓
+          Hết video → FFmpeg → MP4 H.264
 ```
 
-Mặc định quét 1280 mỗi **30 frame**. Các frame còn lại có tối đa **2 vùng ROI** mỗi frame. Ưu tiên tìm lại track đã xác nhận trong tối đa **3 frame** kể từ lần cuối có bbox khớp. Vị trí dự đoán chỉ dùng để chọn vùng tìm. Bbox đưa vào ByteTrack phải đến từ ảnh hiện tại. Nếu còn lượt, kiểm tra thêm box nhỏ hoặc yếu theo lịch **mỗi 5 frame**. Box yếu vẫn có thể giúp ByteTrack nối ID đang hoạt động.
+YOLO dùng kích thước đầu vào mặc định 960, quét bổ sung 1280 mỗi 30 frame và quét ROI theo lịch. Crop được chọn dựa trên kích thước và độ nét vùng chữ, giữ tối đa khoảng một giây theo FPS video. Camera dùng cửa sổ 30 frame. Mỗi crop chỉ đóng góp một lượt đọc OCR.
 
-Chế độ adaptive mặc định ghép lại ID sau tối đa **3 frame bị hụt**. ByteTrack ưu tiên các cặp đã ghép theo cách cũ, rồi xét tâm và kích thước từ các bbox YOLO gần nhất của track chưa ghép. Chỉ nối khi một bbox mới khớp rõ một-một với track đã xác nhận. `frames.jsonl` ghi `id_relinks` ở frame có lượt ghép này. Dùng `--no-relink` để đối chứng.
+`CONSENSUS` cần ít nhất ba phiếu đồng ý và tỷ lệ tối thiểu 60% trong cửa sổ tối đa năm lần đọc. Chất lượng crop và lỗi OCR vẫn ảnh hưởng đến độ chính xác của kết quả.
 
-YOLO mặc định dùng ảnh xám ba kênh. Thêm `--no-grayscale` để đối chứng với đầu vào màu. OCR và video hiển thị dùng frame màu gốc.
+```text
+app/
+  main.py                 API upload, preview, MP4, WebSocket
+  pipeline.py             Nạp model và xử lý từng frame
+  static/
+    index.html            Giao diện
+    app.js                Upload, camera và cập nhật kết quả
+    style.css             Định dạng giao diện
+scripts/                  Detection, tracking, crop và OCR dùng chung
+configs/bytetrack.yaml    Cấu hình tracker
+weights/                  Checkpoint
+Dockerfile                Cài môi trường và khởi động Uvicorn
+compose.yaml              Cấp GPU, mở cổng và mount weights chỉ đọc
+requirements.docker.txt   Dependency riêng cho web Docker
+requirements.txt          Dependency của pipeline CLI
+```
 
-Nếu biết vùng thường có biển bị bỏ sót, dùng `--search-roi X1 Y1 X2 Y2` để ưu tiên quét vùng đó tìm biển mới. Tọa độ tính theo tỷ lệ từ 0 đến 1 của chiều rộng và chiều cao frame. Có thể lặp cờ để quét luân phiên nhiều vùng trong ngân sách ROI hiện tại.
+Docker build copy `app/`, `scripts/` và `configs/` vào `/app`. Compose mount `weights/` từ máy chủ vào `/app/weights` ở chế độ chỉ đọc. Khi sửa code, build lại image để áp dụng.
+
+## Các lệnh thường dùng
+
+Chạy lại image đã build.
 
 ```powershell
-python scripts/realtime_lp_ocr.py --source "data/test/external_ddkhoa/Download.mp4" --search-roi .547 .483 .825 .674 --search-roi .738 .454 1 .645
+docker compose up -d --no-build --wait --wait-timeout 120
 ```
+
+Dừng web.
 
 ```powershell
-python scripts/realtime_lp_ocr.py --source "data/test/test6.mp4"
+docker compose stop
 ```
 
-Ở chế độ OCR theo lịch, ID mới phải xuất hiện **5 frame liên tiếp** trước lần đọc đầu. Sau đó, chờ ít nhất **10 frame** giữa hai lần đọc hoặc **30 frame** khi đã đạt `CONSENSUS`. Mỗi frame đọc tối đa **4 crop**. `CONSENSUS` phản ánh sự đồng thuận giữa các lần đọc và vẫn có thể sai.
+Xem log để tìm nguyên nhân khi giao diện báo lỗi.
+
+```powershell
+docker compose logs -f --tail 100 web
+```
+
+Cập nhật nhánh deploy rồi build lại.
+
+```powershell
+git pull --ff-only origin PhungVu_dockerDeloy
+git lfs pull
+docker compose up --build -d --wait --wait-timeout 120
+```
+
+Gỡ container và network của ứng dụng.
+
+```powershell
+docker compose down
+```
+
+## Xử lý lỗi
+
+**WSL environment detected but no adapters were found**
+
+Docker chưa truy cập được GPU trong WSL. Kiểm tra `nvidia-smi` trên Windows. Với Docker Desktop có lệnh `docker desktop`, có thể thử khởi động lại môi trường như sau.
+
+```powershell
+docker desktop stop
+wsl --shutdown
+docker desktop start
+docker compose up -d --no-build --wait --wait-timeout 120
+```
+
+Thao tác này dừng toàn bộ Docker Desktop và các bản phân phối WSL đang chạy. Nếu Docker Desktop chưa hỗ trợ CLI trên máy, thoát Docker Desktop từ khay hệ thống, chạy `wsl --shutdown`, rồi mở Docker Desktop lại. Nếu lỗi còn lặp lại, kiểm tra driver NVIDIA, WSL và chế độ GPU của laptop.
+
+**CUDA error: unknown error**
+
+Đọc log để xác định lỗi xảy ra trong suy luận. Thử `docker compose restart web`, sau đó chạy lại phép tính CUDA bên trên. Nếu lỗi vẫn lặp lại, thử quy trình khởi động lại WSL và Docker Desktop. Cách này đã phục hồi được GPU trên máy thử, nguyên nhân lỗi CUDA ban đầu còn cần chẩn đoán trên từng máy.
+
+**Xử lý video thất bại**
+
+Chạy `docker compose logs --tail 100 web` để lấy stack trace. Giao diện hiện thông báo chung khi phát sinh lỗi nội bộ. Kiểm tra lỗi CUDA, codec đầu vào và bước FFmpeg trong log.
+
+**Cổng 8000 đang được sử dụng**
+
+Dùng `docker ps` để tìm container chiếm cổng. Dừng container đó hoặc đổi phần cổng máy chủ trong Compose, ví dụ `127.0.0.1:8001:8000`, rồi mở `http://localhost:8001`.
+
+**Video vượt giới hạn độ phân giải**
+
+Tạo bản 1080p trước khi upload. Lệnh sau cần FFmpeg trên máy thực hiện chuyển đổi.
+
+```powershell
+ffmpeg -i input.mp4 -vf "scale=1920:1080:force_original_aspect_ratio=decrease:force_divisible_by=2" -c:v libx264 -crf 20 -pix_fmt yuv420p -movflags +faststart output_web.mp4
+```
+
+## Phạm vi triển khai
+
+Compose mặc định bind cổng vào loopback của máy chạy Docker. Backend có quyền truy cập GPU NVIDIA để suy luận. OpenCV giải mã và FFmpeg xuất video trên CPU.
+
+Nếu đưa web lên máy chủ cho nhiều người sử dụng, cấu hình tên miền, HTTPS, reverse proxy và xác thực phù hợp. Bản hiện tại phục vụ một lượt suy luận tại một thời điểm.

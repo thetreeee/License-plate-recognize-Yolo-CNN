@@ -134,6 +134,7 @@ def main(reader_factory=None):
     import torch
     from ultralytics import YOLO
     from scripts.lpr_models import PlateReader, crop_from_box, check_weight_file, synchronize
+    from scripts.ocr_crops import BestCrops, CropCandidate, crop_quality
 
     def yolo_input(image):
         if args.grayscale:
@@ -205,6 +206,7 @@ def main(reader_factory=None):
     source_fps = capture.get(cv2.CAP_PROP_FPS)
     if not 0 < source_fps < 1000:
         source_fps = 30.
+    crop_buffer = BestCrops(max_age=max(1, round(source_fps)))
     print(f"Device {device} | FP32, imgsz {args.imgsz} | {detection_mode} | {ocr_name} {mode}", flush=True)
     try:
         ok, frame = capture.read()
@@ -252,11 +254,10 @@ def main(reader_factory=None):
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) if tracks else None
             h, w = frame.shape[:2]
             matched_boxes = detection_info.pop("matched_boxes") if detection_info is not None else {}
+            crop_buffer.retain([track["id"] for track in tracks], frames)
             for track in tracks:
                 identity = track["id"]
                 track["display_id"] = display_ids.setdefault(identity, len(display_ids) + 1)
-                if not scheduler.due(identity, frames, args.ocr_every_frame):
-                    continue
                 x1, y1, x2, y2 = track["xyxy"]
                 detection_box = matched_boxes.get(identity)
                 # Use the fresh crop when tracking has added substantial background.
@@ -265,29 +266,39 @@ def main(reader_factory=None):
                     x1, y1, x2, y2 = detection_box
                 box = (int(np.clip(np.floor(x1), 0, w)), int(np.clip(np.floor(y1), 0, h)),
                        int(np.clip(np.ceil(x2), 0, w)), int(np.clip(np.ceil(y2), 0, h)))
+                selected = None
                 try:
                     crop, _ = crop_from_box(rgb, box, reader.config.margin)
+                    if args.ocr_every_frame:
+                        selected = CropCandidate(crop, frames, 0.)
+                    elif (track["confidence"] >= args.ocr_conf and
+                          0 < x1 < x2 < w and 0 < y1 < y2 < h and
+                          crop.shape[0] >= 16 and crop.shape[1] >= 24):
+                        blur, quality = crop_quality(crop)
+                        if blur >= args.min_blur:
+                            crop_buffer.offer(identity, frames, crop, quality)
                 except ValueError:
-                    continue
-                blur = float(cv2.Laplacian(cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY), cv2.CV_64F).var())
-                if not args.ocr_every_frame and (track["confidence"] < args.ocr_conf or
-                        crop.shape[0] < 16 or crop.shape[1] < 24 or blur < args.min_blur):
-                    continue
-                candidates.append((scheduler.states[identity].last_attempt, identity, crop, blur))
-            candidates.sort(key=lambda item: (item[0], -item[3]))
+                    pass
+                if not args.ocr_every_frame:
+                    selected = crop_buffer.pending.get(identity)
+                if selected is not None and scheduler.due(identity, frames, args.ocr_every_frame):
+                    candidates.append((scheduler.states[identity].last_attempt, identity, selected))
+            candidates.sort(key=lambda item: (item[0], -item[2].quality))
             if not args.ocr_every_frame:
                 candidates = candidates[:args.ocr_batch]
             batch_ms = 0.
             if candidates:
                 start = time.perf_counter()
-                readings, timing = reader.read_many([item[2] for item in candidates])
+                readings, timing = reader.read_many([item[2].image for item in candidates])
                 synchronize(device)
                 batch_ms = (time.perf_counter() - start) * 1000
                 ocr_times.append(batch_ms)
                 stages.update(timing)
                 ocr_batches += 1
                 ocr_crops += len(candidates)
-                for (_, identity, _, _), reading in zip(candidates, readings):
+                for (_, identity, selected), reading in zip(candidates, readings):
+                    if not args.ocr_every_frame:
+                        crop_buffer.consume(identity)
                     state = scheduler.states[identity]
                     previous_consensus = (state.consensus, state.text)
                     scheduler.attempted(identity, frames)
@@ -302,7 +313,8 @@ def main(reader_factory=None):
                             flush=True,
                         )
                     history = readings_by_id.setdefault(str(identity), [])
-                    history.append(dict(frame=frames, **reading.as_dict()))
+                    history.append(dict(frame=frames, crop_frame=selected.frame,
+                                        crop_quality=selected.quality, **reading.as_dict()))
             annotated = frame.copy()
             rows = []
             any_consensus = False
@@ -380,6 +392,7 @@ def main(reader_factory=None):
         device=str(device), precision="FP32", imgsz=args.imgsz, conf=args.conf,
         ocr_conf=args.ocr_conf, ocr_interval=args.ocr_interval, stable_interval=args.stable_interval,
         ocr_crop_width_ratio=OCR_CROP_WIDTH_RATIO if adaptive else None,
+        ocr_best_crop=not args.ocr_every_frame, crop_max_age_frames=crop_buffer.max_age,
         min_blur=args.min_blur, ocr_batch=args.ocr_batch, iou=args.iou, source_fps=source_fps, paced=args.paced,
         tracker_config=read_tracker_config(args.tracker),
         peak_cuda_allocated_mb=torch.cuda.max_memory_allocated(device)/2**20 if device.type=="cuda" else None,
